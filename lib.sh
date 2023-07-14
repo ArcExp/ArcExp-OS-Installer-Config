@@ -3,7 +3,6 @@ set -o pipefail
 
 declare -r workdir='/mnt'
 declare -r osidir='/etc/os-installer'
-declare -r rootlabel='ArcExp_root'
 
 # Ensure user is able to run sudo
 for group in $(groups); do
@@ -14,19 +13,8 @@ for group in $(groups); do
 
 done
 
-if [[ ! -n $sudo_ok ]]; then
-	printf 'The current user is not a member of either the sudo or wheel group, this os-installer configuration requires sudo permissions\n'
-	exit 1
-fi
-
 # Executes program or build-in and quits osi on non-zero exit code
 task_wrapper () {
-	if [[ -n $OSI_CONFIG_DEBUG ]]; then
-		$* >> $HOME/installation.log
-	else
-		$*
-	fi
-
 	if [[ ! $? -eq 0  ]]; then
 		printf "Task \"$*\" exited with non-zero exit code, quitting...\n"
 		exit 1
