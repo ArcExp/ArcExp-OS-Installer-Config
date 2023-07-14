@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # load collection of checks and functions
-source /etc/os-installer/lib.sh || { printf 'Failed to load /etc/os-installer/lib.sh\n'; exit 1; }
+source /etc/os-installer/error_report.sh || { printf 'Failed to load /etc/os-installer/error_report.sh\n'; exit 1; }
 
 # sanity check that all variables were set
 if [ -z "${OSI_LOCALE+x}" ] || \

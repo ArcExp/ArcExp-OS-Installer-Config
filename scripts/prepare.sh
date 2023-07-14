@@ -19,6 +19,6 @@ sudo pacman -Syy
 
 # Optimize download speed using reflector based on IP address
 country_code=$(curl -s https://ipapi.co/country/)
-sudo reflector --country $country_code --age 24 --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+sudo reflector --country $country_code --age 20 --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
 
 exit 0

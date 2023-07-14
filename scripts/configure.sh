@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # load collection of checks and functions
-source /etc/os-installer/lib.sh || { printf 'Failed to load /etc/os-installer/lib.sh\n'; exit 1; }
+source /etc/os-installer/error_report.sh || { printf 'Failed to load /etc/os-installer/error_report.sh\n'; exit 1; }
 
 # sanity check that all variables were set
 if [ -z "${OSI_LOCALE+x}" ] || \
@@ -72,6 +72,25 @@ task_wrapper sudo arch-chroot "$workdir" mkdir -p /home/$OSI_USER_NAME/{Desktop,
 
 task_wrapper sudo arch-chroot "$workdir" touch /home/"$OSI_USER_NAME"/Templates/"Text File"
 
-yes | task_wrapper sudo arch-chroot "$workdir" flatpak --batch install flathub com.discordapp.Discord
+# Install flatpak apps (placeholders for their AUR equivalents)
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub com.discordapp.Discord
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub com.github.tchx84.Flatseal
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub org.shotcut.Shotcut
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub net.davidotek.pupgui2
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub com.github.KRTirtho.Spotube
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub org.kde.krita
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub org.blender.Blender
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub org.onlyoffice.desktopeditors
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub com.obsproject.Studio
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub org.videolan.VLC
 
 exit 0
