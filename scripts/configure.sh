@@ -70,7 +70,14 @@ task_wrapper sudo arch-chroot "$workdir" pacman -S steam --noconfirm
 # Create home directory
 task_wrapper sudo arch-chroot "$workdir" mkdir -p /home/$OSI_USER_NAME/{Desktop,Documents,Downloads,Music,Pictures,Public,Templates,Videos}
 
-task_wrapper sudo arch-chroot "$workdir" touch /home/"$OSI_USER_NAME"/Templates/"Text File"
+# Set ownership of the home directory
+task_wrapper sudo arch-chroot "$workdir" chown -R $OSI_USER_NAME:$OSI_USER_NAME /home/$OSI_USER_NAME
+
+# Set ownership of the Templates directory
+task_wrapper sudo arch-chroot "$workdir" chown $OSI_USER_NAME:$OSI_USER_NAME /home/$OSI_USER_NAME/Templates
+
+# Create the empty "Text File" inside the Templates directory
+task_wrapper sudo arch-chroot "$workdir" touch /home/$OSI_USER_NAME/Templates/"Text File"
 
 # Install flatpak apps (placeholders for their AUR equivalents)
 yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub com.discordapp.Discord
@@ -92,5 +99,7 @@ yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub org.on
 yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub com.obsproject.Studio
 
 yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub org.videolan.VLC
+
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub com.mattjakeman.ExtensionManager
 
 exit 0
