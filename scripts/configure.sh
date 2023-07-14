@@ -72,4 +72,6 @@ task_wrapper sudo arch-chroot "$workdir" mkdir -p /home/$OSI_USER_NAME/{Desktop,
 
 task_wrapper sudo arch-chroot "$workdir" touch /home/"$OSI_USER_NAME"/Templates/"Text File"
 
+yes | task_wrapper sudo arch-chroot "$workdir" flatpak --batch install flathub com.discordapp.Discord
+
 exit 0

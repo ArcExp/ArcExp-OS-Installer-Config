@@ -81,14 +81,14 @@ else
 fi
 
 # Install system packages
-task_wrapper sudo pacstrap "$workdir" base base-devel linux linux-firmware intel-ucode amd-ucode util-linux
+task_wrapper sudo pacstrap "$workdir" base base-devel linux linux-firmware intel-ucode amd-ucode
 
 # Populate the Arch Linux keyring inside chroot
 task_wrapper sudo arch-chroot "$workdir" pacman-key --init
 task_wrapper sudo arch-chroot "$workdir" pacman-key --populate archlinux
 
 # Install desktop environment packages
-task_wrapper sudo arch-chroot "$workdir" pacman -S --noconfirm firefox flatpak fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-logs gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon
+task_wrapper sudo arch-chroot "$workdir" pacman -S --noconfirm firefox flatpak fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-logs gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak
 
 # Install GRUB based on firmware type (BIOS or UEFI)
 if [ -d "$workdir/sys/firmware/efi" ]; then
