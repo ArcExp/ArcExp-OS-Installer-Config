@@ -81,7 +81,7 @@ else
 fi
 
 # Install system packages
-task_wrapper sudo pacstrap "$workdir" base base-devel linux linux-firmware
+task_wrapper sudo pacstrap "$workdir" base base-devel linux-zen linux-zen-headers linux-firmware dkms
 
 # Populate the Arch Linux keyring inside chroot
 task_wrapper sudo arch-chroot "$workdir" pacman-key --init
