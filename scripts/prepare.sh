@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 # Loop until pacman-init.service finishes
@@ -16,10 +15,16 @@ while true; do
 done
 
 # Synchronize with repos
-sudo pacman -Syy
+if ! sudo pacman -Syy; then
+    printf 'Failed to synchronize with repos.\n'
+    exit 1
+fi
 
 # Optimize download speed using reflector based on IP address
 country_code=$(curl -s https://ipapi.co/country/)
-sudo reflector --country $country_code --age 20 --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+if ! sudo reflector --country $country_code --age 20 --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist; then
+    printf 'Failed to optimize download speed with reflector.\n'
+    exit 1
+fi
 
 exit 0
