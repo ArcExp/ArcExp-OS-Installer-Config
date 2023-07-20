@@ -15,6 +15,27 @@ then
     exit 1
 fi
 
+# Function to check if the device is an NVMe SSD
+is_nvme_ssd() {
+    local dev_name="${1##*/}"
+    if [[ -L "/sys/block/$dev_name" ]]; then
+        # Check if it's an NVMe device by checking the subsystem path
+        local subsystem_path=$(readlink -f "/sys/block/$dev_name/device/subsystem")
+        if [[ "$subsystem_path" == *"/nvme/"* ]]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Function to check if the system is a virtual machine
+is_virtual_machine() {
+    if [ -d "/sys/hypervisor" ] && grep -q "vmware\|qemu" "/sys/hypervisor/type"; then
+        return 0
+    fi
+    return 1
+}
+
 # Check if something is already mounted to $workdir
 if mountpoint -q "$workdir"; then
     printf "%s is already a mountpoint, unmount this directory and try again\n" "$workdir"
@@ -24,13 +45,18 @@ fi
 # Write partition table to the disk
 if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
     # Disk-level partitioning
-    if [ -n "${OSI_DEVICE_EFI_PARTITION}" ]; then
-        # GPT partitioning for EFI systems
+    if is_nvme_ssd "$OSI_DEVICE_PATH"; then
+        # GPT partitioning for NVMe SSD with EFI systems
         task_wrapper sudo parted "${OSI_DEVICE_PATH}" mklabel gpt --script
-        task_wrapper sudo parted "${OSI_DEVICE_PATH}" mkpart primary ext4 1MiB 512MiB --script
+        task_wrapper sudo parted "${OSI_DEVICE_PATH}" mkpart efi fat32 1MiB 512MiB --script
+        task_wrapper sudo parted "${OSI_DEVICE_PATH}" set 1 esp on --script
         task_wrapper sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 512MiB 100% --script
+    elif is_virtual_machine; then
+        # MBR partitioning for BIOS systems in VMs
+        task_wrapper sudo parted "${OSI_DEVICE_PATH}" mklabel msdos --script
+        task_wrapper sudo parted "${OSI_DEVICE_PATH}" mkpart primary ext4 1MiB 100% --script
     else
-        # MBR partitioning for BIOS systems
+        # MBR partitioning for BIOS systems on physical hardware
         task_wrapper sudo parted "${OSI_DEVICE_PATH}" mklabel msdos --script
         task_wrapper sudo parted "${OSI_DEVICE_PATH}" mkpart primary ext4 1MiB 512MiB --script
         task_wrapper sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 512MiB 100% --script
@@ -42,7 +68,6 @@ if [[ "$OSI_USE_ENCRYPTION" -eq 1 ]]; then
     # If user requested disk encryption
     if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
         # If target is a drive
-        printf '%s\n' "$OSI_ENCRYPTION_PIN" | task_wrapper sudo mkfs.ext4 -F "${OSI_DEVICE_PATH}1"
         printf '%s\n' "$OSI_ENCRYPTION_PIN" | task_wrapper sudo cryptsetup -q luksFormat "${OSI_DEVICE_PATH}2"
         printf '%s\n' "$OSI_ENCRYPTION_PIN" | task_wrapper sudo cryptsetup open "${OSI_DEVICE_PATH}2" "$rootlabel" -
         task_wrapper sudo mkfs.btrfs -f "/dev/mapper/$rootlabel"

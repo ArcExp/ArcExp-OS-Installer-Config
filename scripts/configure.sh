@@ -49,6 +49,9 @@ echo "$OSI_USER_NAME:$OSI_USER_PASSWORD" | task_wrapper sudo arch-chroot "$workd
 task_wrapper sudo arch-chroot "$workdir" usermod -a -G wheel "$OSI_USER_NAME"
 task_wrapper sudo arch-chroot "$workdir" chage -M -1 "$OSI_USER_NAME"
 
+# Add the user to the sudoers file
+echo "$OSI_USER_NAME ALL=(ALL) ALL" | task_wrapper sudo arch-chroot "$workdir" tee -a /etc/sudoers
+
 # Set timezone
 task_wrapper sudo arch-chroot "$workdir" ln -sf "/usr/share/zoneinfo/$OSI_TIMEZONE" /etc/localtime
 
@@ -73,12 +76,6 @@ task_wrapper sudo arch-chroot "$workdir" mkdir -p /home/$OSI_USER_NAME/{Desktop,
 # Set ownership of the home directory
 task_wrapper sudo arch-chroot "$workdir" chown -R $OSI_USER_NAME:$OSI_USER_NAME /home/$OSI_USER_NAME
 
-# Create the empty "Text File" inside the Templates directory
-task_wrapper sudo arch-chroot "$workdir" touch /home/$OSI_USER_NAME/Templates/"Text File"
-
-# Set ownership of the Templates directory
-task_wrapper sudo arch-chroot "$workdir" chown -R $OSI_USER_NAME:$OSI_USER_NAME /home/$OSI_USER_NAME/Templates
-
 # Import primary key and install keyring and mirrorlist
 task_wrapper sudo arch-chroot "$workdir" pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
 task_wrapper sudo arch-chroot "$workdir" pacman-key --lsign-key 3056513887B78AEB
@@ -91,7 +88,7 @@ echo -e "\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist" | task_wra
 task_wrapper sudo arch-chroot "$workdir" pacman -Sy --noconfirm
 
 # Install packages from Chaotic-AUR
-task_wrapper sudo arch-chroot "$workdir" pacman -S --noconfirm yay extension-manager protonup-qt qbittorrent-enhanced xone-dkms xpadneo-dkms xone-dongle-firmware ttf-ms-fonts onlyoffice-bin lutris-git gamescope-git mangohud-git lib32-mangohud-git obs-studio-amf
+task_wrapper sudo arch-chroot "$workdir" pacman -S --noconfirm yay extension-manager protonup-qt qbittorrent-enhanced xone-dkms xpadneo-dkms xone-dongle-firmware ttf-ms-fonts onlyoffice-bin lutris-git gamescope-git mangohud-git lib32-mangohud-git
 
 yes | task_wrapper sudo arch-chroot "$workdir" flatpak install -y flathub com.discordapp.Discord
 
@@ -133,7 +130,16 @@ elif grep -E "Intel Corporation UHD" <<< ${gpu_type}; then
     task_wrapper sudo arch-chroot "$workdir" pacman -S --needed --noconfirm libva-intel-driver libvdpau-va-gl lib32-vulkan-intel vulkan-intel libva-intel-driver libva-utils lib32-mesa
 fi
 
-# Update system
+# Customise grub with Vimix grub theme and update grub config file
+task_wrapper sudo arch-chroot "$workdir" git clone https://github.com/vinceliuice/grub2-themes.git
+
+task_wrapper sudo arch-chroot "$workdir" cd /grub2-themes
+
+task_wrapper sudo arch-chroot "$workdir" sudo ./install.sh -b -t vimix
+
+task_wrapper sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg
+
+# Finally, update system
 task_wrapper sudo arch-chroot "$workdir" pacman -Syu
 
 exit 0
