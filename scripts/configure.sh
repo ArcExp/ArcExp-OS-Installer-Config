@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+declare -r workdir='/mnt'
+declare -r osidir='/etc/os-installer'
+
 # Check if all required environment variables are set
 if [ -z "${OSI_LOCALE+x}" ] || \
    [ -z "${OSI_DEVICE_PATH+x}" ] || \
@@ -98,9 +101,22 @@ if ! sudo arch-chroot "$workdir" pacman -S steam --noconfirm; then
     exit 1
 fi
 
-# Create home directory
-if ! sudo arch-chroot "$workdir" mkdir -p "/home/$OSI_USER_NAME/{Desktop,Documents,Downloads,Music,Pictures,Public,Templates,Videos}"; then
-    printf 'Failed to create home directory.\n'
+# Create home directory and subdirectories
+if ! sudo arch-chroot "$workdir" mkdir -p "/home/$OSI_USER_NAME/Desktop" \
+    "/home/$OSI_USER_NAME/Documents" \
+    "/home/$OSI_USER_NAME/Downloads" \
+    "/home/$OSI_USER_NAME/Music" \
+    "/home/$OSI_USER_NAME/Pictures" \
+    "/home/$OSI_USER_NAME/Public" \
+    "/home/$OSI_USER_NAME/Templates" \
+    "/home/$OSI_USER_NAME/Videos"; then
+    printf 'Failed to create home directory and subdirectories.\n'
+    exit 1
+fi
+
+# Create 'Text File' in the 'Templates' directory
+if ! sudo arch-chroot "$workdir" touch "/home/$OSI_USER_NAME/Templates/Text File"; then
+    printf 'Failed to create the Text File in the Templates directory.\n'
     exit 1
 fi
 
@@ -207,22 +223,6 @@ elif grep -E "Intel Corporation UHD" <<< ${gpu_type}; then
         printf 'Failed to install Intel UHD Graphics drivers.\n'
         exit 1
     fi
-fi
-
-# Customise grub with Vimix grub theme and update grub config file
-if ! sudo arch-chroot "$workdir" git clone https://github.com/vinceliuice/grub2-themes.git; then
-    printf 'Failed to clone Vimix grub theme repository.\n'
-    exit 1
-fi
-
-if ! sudo arch-chroot "$workdir" cd /grub2-themes; then
-    printf 'Failed to change directory to grub2-themes.\n'
-    exit 1
-fi
-
-if ! sudo arch-chroot "$workdir" sudo ./install.sh -b -t vimix; then
-    printf 'Failed to install Vimix grub theme.\n'
-    exit 1
 fi
 
 if ! sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg; then

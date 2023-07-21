@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# Function to display an error and exit
+show_error() {
+    printf "ERROR: %s\n" "$1" >&2
+    exit 1
+}
+
 # Loop until pacman-init.service finishes
 printf 'Waiting for pacman-init.service to finish running before starting the installation... '
 
@@ -15,16 +21,10 @@ while true; do
 done
 
 # Synchronize with repos
-if ! sudo pacman -Syy; then
-    printf 'Failed to synchronize with repos.\n'
-    exit 1
-fi
+sudo pacman -Syy || show_error "Failed to synchronize with repos"
 
 # Optimize download speed using reflector based on IP address
 country_code=$(curl -s https://ipapi.co/country/)
-if ! sudo reflector --country $country_code --age 20 --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist; then
-    printf 'Failed to optimize download speed with reflector.\n'
-    exit 1
-fi
+sudo reflector --country $country_code --age 20 --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist || show_error "Failed to optimize download speed"
 
 exit 0

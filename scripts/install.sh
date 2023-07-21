@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+declare -r workdir='/mnt'
+
 # Function to check if the device is an NVMe SSD
 is_nvme_ssd() {
     local dev_name="${1##*/}"
@@ -50,17 +52,23 @@ if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
         # GPT partitioning for NVMe SSD
         if is_virtual_machine; then
             # BIOS partitioning for EFI systems in VMs
-            parted "${OSI_DEVICE_PATH}" mklabel msdos --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-            parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" mklabel msdos --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
         else
             # GPT partitioning for EFI systems on physical hardware
-            parted "${OSI_DEVICE_PATH}" mklabel gpt --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-            parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" mklabel gpt --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" mkpart primary fat32 1MiB 1GB --script || show_error "Failed to create /boot/efi partition on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" set 1 esp on || show_error "Failed to set boot flag on /boot/efi partition"
+            sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot/efi partition"
+            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1GB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
         fi
     else
         # MBR partitioning for BIOS systems on physical hardware
-        parted "${OSI_DEVICE_PATH}" mklabel msdos --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-        parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+        sudo parted "${OSI_DEVICE_PATH}" mklabel msdos --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+        sudo parted "${OSI_DEVICE_PATH}" mkpart primary fat32 1MiB 1GB --script || show_error "Failed to create /boot/efi partition on $OSI_DEVICE_PATH"
+        sudo parted "${OSI_DEVICE_PATH}" set 1 esp on || show_error "Failed to set boot flag on /boot/efi partition"
+        sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot/efi partition"
+        sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1GB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
     fi
 fi
 
@@ -69,58 +77,58 @@ if [[ "$OSI_USE_ENCRYPTION" -eq 1 ]]; then
     # If user requested disk encryption
     if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
         # If target is a drive
-        printf '%s\n' "$OSI_ENCRYPTION_PIN" | cryptsetup -q luksFormat "${OSI_DEVICE_PATH}1" || show_error "Failed to format ${OSI_DEVICE_PATH}1 with LUKS"
-        printf '%s\n' "$OSI_ENCRYPTION_PIN" | cryptsetup open "${OSI_DEVICE_PATH}1" "$rootlabel" - || show_error "Failed to open ${OSI_DEVICE_PATH}1 with LUKS"
-        mkfs.btrfs -f "/dev/mapper/$rootlabel" || show_error "Failed to create Btrfs filesystem on /dev/mapper/$rootlabel"
+        printf '%s\n' "$OSI_ENCRYPTION_PIN" | sudo cryptsetup -q luksFormat "${OSI_DEVICE_PATH}2" || show_error "Failed to format ${OSI_DEVICE_PATH}2 with LUKS"
+        printf '%s\n' "$OSI_ENCRYPTION_PIN" | sudo cryptsetup open "${OSI_DEVICE_PATH}2" "$rootlabel" - || show_error "Failed to open ${OSI_DEVICE_PATH}2 with LUKS"
+        sudo mkfs.btrfs -f "/dev/mapper/$rootlabel" || show_error "Failed to create Btrfs filesystem on /dev/mapper/$rootlabel"
     else
         # If target is a partition
-        mkfs.btrfs -f "${OSI_DEVICE_PATH}" || show_error "Failed to create Btrfs filesystem on $OSI_DEVICE_PATH"
+        sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}2"
     fi
 else
     # If no disk encryption requested
     if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
         # If target is a drive
-        yes | mkfs.btrfs -f "${OSI_DEVICE_PATH}1" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}1"
+        yes | sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}2"
     else
         # If target is a partition
-        yes | mkfs.btrfs -f "${OSI_DEVICE_PATH}" || show_error "Failed to create Btrfs filesystem on $OSI_DEVICE_PATH"
+        yes | sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}2"
     fi
 fi
 
 # Mount the root partition
 if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
     # If target is a drive
-    mount "${OSI_DEVICE_PATH}1" "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}1 to $workdir"
+    sudo mkdir -p "$workdir" || show_error "Failed to create mount directory $workdir"
+    sudo mount "${OSI_DEVICE_PATH}2" "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}2 to $workdir"
 else
     # If target is a partition
-    mount "${OSI_DEVICE_PATH}" "$workdir" || show_error "Failed to mount $OSI_DEVICE_PATH to $workdir"
+    sudo mkdir -p "$workdir" || show_error "Failed to create mount directory $workdir"
+    sudo mount "${OSI_DEVICE_PATH}2" "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}2 to $workdir"
 fi
 
 # Install system packages
-pacstrap "$workdir" base base-devel linux-zen linux-zen-headers linux-firmware dkms || show_error "Failed to install system packages"
+sudo pacstrap "$workdir" base base-devel linux-zen linux-zen-headers linux-firmware dkms || show_error "Failed to install system packages"
 
 # Populate the Arch Linux keyring inside chroot
-arch-chroot "$workdir" pacman-key --init || show_error "Failed to initialize Arch Linux keyring"
-arch-chroot "$workdir" pacman-key --populate archlinux || show_error "Failed to populate Arch Linux keyring"
+sudo arch-chroot "$workdir" pacman-key --init || show_error "Failed to initialize Arch Linux keyring"
+sudo arch-chroot "$workdir" pacman-key --populate archlinux || show_error "Failed to populate Arch Linux keyring"
 
 # Install desktop environment packages
-arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-logs gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak || show_error "Failed to install desktop environment packages"
+sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-logs gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak || show_error "Failed to install desktop environment packages"
 
 # Install GRUB based on firmware type (BIOS or UEFI)
 if [ -d "$workdir/sys/firmware/efi" ]; then
     # UEFI system
-    arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr || show_error "Failed to install GRUB and efibootmgr"
-    arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB || show_error "Failed to install GRUB for UEFI"
+    sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr || show_error "Failed to install GRUB and efibootmgr"
+    sudo arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB || show_error "Failed to install GRUB for UEFI"
 else
     # BIOS system
-    arch-chroot "$workdir" pacman -S --noconfirm grub || show_error "Failed to install GRUB"
-    arch-chroot "$workdir" grub-install --target=i386-pc "${OSI_DEVICE_PATH}" || show_error "Failed to install GRUB for BIOS"
+    sudo arch-chroot "$workdir" pacman -S --noconfirm grub || show_error "Failed to install GRUB"
+    sudo arch-chroot "$workdir" grub-install --target=i386-pc "${OSI_DEVICE_PATH}" || show_error "Failed to install GRUB for BIOS"
+    sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file"
 fi
 
-# Generate the GRUB configuration file
-arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file"
-
 # Generate the fstab file
-genfstab -U "$workdir" | tee "$workdir/etc/fstab" || show_error "Failed to generate fstab file"
+sudo genfstab -U "$workdir" | sudo tee "$workdir/etc/fstab" || show_error "Failed to generate fstab file"
 
 exit 0
