@@ -23,6 +23,13 @@ is_virtual_machine() {
     return 1
 }
 
+# Function to get the drive size
+get_drive_size() {
+    local dev_path=$1
+    local size_bytes=$(cat "/sys/block/$(basename "$dev_path")/size")
+    echo "$((size_bytes * 512))"
+}
+
 # Function to display an error and exit
 show_error() {
     printf "ERROR: %s\n" "$1" >&2
@@ -52,18 +59,31 @@ else
     declare -r partition_path="${OSI_DEVICE_PATH}"
 fi
 
+# Determine partition table type (MBR or GPT) based on drive size for BIOS systems
+if ! is_virtual_machine; then
+    declare -r drive_size=$(get_drive_size "$OSI_DEVICE_PATH")
+    if [[ ! -d "$workdir/sys/firmware/efi" ]] && (( drive_size <= 2199023255552 )); then
+        declare -r partition_table="msdos"  # MBR
+    else
+        declare -r partition_table="gpt"  # GPT (for both EFI systems and BIOS systems larger than 2 TiB)
+    fi
+fi
+
 # Write partition table to the disk
 if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
     # Disk-level partitioning
     if is_nvme_ssd "$OSI_DEVICE_PATH"; then
         # GPT partitioning for NVMe SSD
         if is_virtual_machine; then
-            # BIOS partitioning for EFI systems in VMs
-            sudo parted "${OSI_DEVICE_PATH}" mklabel gpt --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+            # GPT partitioning for EFI systems in VMs
+            sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" mkpart primary fat32 1MiB 1GB --script || show_error "Failed to create /boot/efi partition on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" set 1 esp on || show_error "Failed to set boot flag on /boot/efi partition"
+            sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot/efi partition"
+            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1GB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
         else
             # GPT partitioning for EFI systems on physical hardware
-            sudo parted "${OSI_DEVICE_PATH}" mklabel gpt --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
             sudo parted "${OSI_DEVICE_PATH}" mkpart primary fat32 1MiB 1GB --script || show_error "Failed to create /boot/efi partition on $OSI_DEVICE_PATH"
             sudo parted "${OSI_DEVICE_PATH}" set 1 esp on || show_error "Failed to set boot flag on /boot/efi partition"
             sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot/efi partition"
@@ -71,11 +91,13 @@ if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
         fi
     else
         # MBR partitioning for BIOS systems on physical hardware
-        sudo parted "${OSI_DEVICE_PATH}" mklabel gpt --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-        sudo parted "${OSI_DEVICE_PATH}" mkpart primary fat32 1MiB 1GB --script || show_error "Failed to create /boot/efi partition on $OSI_DEVICE_PATH"
-        sudo parted "${OSI_DEVICE_PATH}" set 1 esp on || show_error "Failed to set boot flag on /boot/efi partition"
-        sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot/efi partition"
-        sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1GB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+        if [[ "$partition_table" == "gpt" ]]; then
+            sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+        else
+            sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot partition"
+        fi
     fi
 fi
 
@@ -89,28 +111,28 @@ if [[ "$OSI_USE_ENCRYPTION" -eq 1 ]]; then
         sudo mkfs.btrfs -f "/dev/mapper/$rootlabel" || show_error "Failed to create Btrfs filesystem on /dev/mapper/$rootlabel"
     else
         # If target is a partition
-        sudo mkfs.btrfs -f "${partition_path}2" || show_error "Failed to create Btrfs filesystem on ${partition_path}2"
+        sudo mkfs.btrfs -f "$partition_path" || show_error "Failed to create Btrfs filesystem on $partition_path"
     fi
 else
     # If no disk encryption requested
     if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
         # If target is a drive
-        yes | sudo mkfs.btrfs -f "${partition_path}2" || show_error "Failed to create Btrfs filesystem on ${partition_path}2"
+        yes | sudo mkfs.btrfs -f "$partition_path" || show_error "Failed to create Btrfs filesystem on $partition_path"
     else
         # If target is a partition
-        yes | sudo mkfs.btrfs -f "${partition_path}2" || show_error "Failed to create Btrfs filesystem on ${partition_path}2"
+        yes | sudo mkfs.btrfs -f "$partition_path" || show_error "Failed to create Btrfs filesystem on $partition_path"
     fi
 fi
 
 # Mount the root partition
-if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
-    # If target is a drive
-    sudo mkdir -p "$workdir" || show_error "Failed to create mount directory $workdir"
-    sudo mount "${partition_path}2" "$workdir" || show_error "Failed to mount ${partition_path}2 to $workdir"
+sudo mkdir -p "$workdir" || show_error "Failed to create mount directory $workdir"
+
+if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
+    # Non-EFI system
+    sudo mount "$partition_path" "$workdir" || show_error "Failed to mount $partition_path to $workdir"
 else
-    # If target is a partition
-    sudo mkdir -p "$workdir" || show_error "Failed to create mount directory $workdir"
-    sudo mount "${partition_path}2" "$workdir" || show_error "Failed to mount ${partition_path}2 to $workdir"
+    # EFI system
+    sudo mount "${OSI_DEVICE_EFI_PARTITION}" "$workdir" || show_error "Failed to mount EFI partition to $workdir"
 fi
 
 # Install system packages
@@ -131,7 +153,7 @@ if [ -d "$workdir/sys/firmware/efi" ]; then
 else
     # BIOS system
     sudo arch-chroot "$workdir" pacman -S --noconfirm grub || show_error "Failed to install GRUB"
-    sudo arch-chroot "$workdir" grub-install --target=i386-pc "${OSI_DEVICE_PATH}" || show_error "Failed to install GRUB for BIOS"
+    sudo arch-chroot "$workdir" grub-install --target=i386-pc "$OSI_DEVICE_PATH" || show_error "Failed to install GRUB for BIOS"
 fi
 
 # Generate the GRUB configuration file
