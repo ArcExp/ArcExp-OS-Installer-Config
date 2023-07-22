@@ -17,7 +17,7 @@ is_nvme_ssd() {
 
 # Function to check if the system is a virtual machine
 is_virtual_machine() {
-    if [ -d "/sys/firmware/efi" ] && [ -d "/sys/hypervisor" ] && grep -q "vmware\|qemu" "/sys/hypervisor/type"; then
+    if [ -d "/sys/firmware/efi" ] && grep -qE "vmware|qemu" "/sys/hypervisor/type"; then
         return 0
     fi
     return 1
@@ -52,22 +52,29 @@ if mountpoint -q "$workdir"; then
     show_error "$workdir is already a mountpoint, unmount this directory and try again"
 fi
 
-# Determine the NVMe drive partition path
+# Determine the NVMe drive partition path and partition table type
 if [[ $OSI_DEVICE_PATH == *"nvme"*"n"* ]]; then
     declare -r partition_path="${OSI_DEVICE_PATH}p"
+    declare -r partition_table="gpt"  # GPT for NVMe SSD
 else
     declare -r partition_path="${OSI_DEVICE_PATH}"
-fi
-
-# Determine partition table type (MBR or GPT) based on drive size for BIOS systems
-if ! is_virtual_machine; then
     declare -r drive_size=$(get_drive_size "$OSI_DEVICE_PATH")
     if [[ ! -d "$workdir/sys/firmware/efi" ]] && (( drive_size <= 2199023255552 )); then
-        declare -r partition_table="msdos"  # MBR
+        declare -r partition_table="msdos"  # MBR for BIOS systems smaller than 2 TiB
     else
-        declare -r partition_table="gpt"  # GPT (for both EFI systems and BIOS systems larger than 2 TiB)
+        declare -r partition_table="gpt"  # GPT for EFI systems and BIOS systems larger than 2 TiB
     fi
 fi
+
+# Function to create a partition with a specific type, start, and end size
+create_partition() {
+    local dev_path=$1
+    local part_type=$2
+    local start_size=$3
+    local end_size=$4
+
+    sudo parted "$dev_path" mkpart primary "$part_type" "$start_size" "$end_size" --script || show_error "Failed to create $part_type partition on $dev_path"
+}
 
 # Write partition table to the disk
 if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
@@ -77,27 +84,25 @@ if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
         if is_virtual_machine; then
             # GPT partitioning for EFI systems in VMs
             sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-            sudo parted "${OSI_DEVICE_PATH}" mkpart primary fat32 1MiB 1GB --script || show_error "Failed to create /boot/efi partition on $OSI_DEVICE_PATH"
+            create_partition "$OSI_DEVICE_PATH" fat32 1MiB 1GB
             sudo parted "${OSI_DEVICE_PATH}" set 1 esp on || show_error "Failed to set boot flag on /boot/efi partition"
             sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot/efi partition"
-            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1GB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+            create_partition "$OSI_DEVICE_PATH" btrfs 1GB 100%
         else
             # GPT partitioning for EFI systems on physical hardware
             sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-            sudo parted "${OSI_DEVICE_PATH}" mkpart primary fat32 1MiB 1GB --script || show_error "Failed to create /boot/efi partition on $OSI_DEVICE_PATH"
+            create_partition "$OSI_DEVICE_PATH" fat32 1MiB 1GB
             sudo parted "${OSI_DEVICE_PATH}" set 1 esp on || show_error "Failed to set boot flag on /boot/efi partition"
             sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot/efi partition"
-            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1GB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+            create_partition "$OSI_DEVICE_PATH" btrfs 1GB 100%
         fi
     else
         # MBR partitioning for BIOS systems on physical hardware
         if [[ "$partition_table" == "gpt" ]]; then
             sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
-            sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot partition"
         else
             sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+            create_partition "$OSI_DEVICE_PATH" btrfs 1MiB 100%
             sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot partition"
         fi
     fi
