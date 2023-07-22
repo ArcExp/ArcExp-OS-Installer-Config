@@ -93,6 +93,8 @@ if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
         # MBR partitioning for BIOS systems on physical hardware
         if [[ "$partition_table" == "gpt" ]]; then
             sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+            sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot partition"
         else
             sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
             sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
