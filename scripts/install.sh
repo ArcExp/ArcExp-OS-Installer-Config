@@ -108,12 +108,26 @@ fi
 # Mount the root partition
 sudo mkdir -p "$workdir" || show_error "Failed to create mount directory $workdir"
 
-if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
-    # Non-EFI system
-    sudo mount "$partition_path" "$workdir" || show_error "Failed to mount $partition_path to $workdir"
+if is_nvme_ssd "$OSI_DEVICE_PATH"; then
+    # For NVMe SSD
+    if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
+        # Non-EFI system
+        sudo mount "${partition_path}2" "$workdir" || show_error "Failed to mount ${partition_path}2 to $workdir"
+    else
+        # EFI system
+        sudo mount "${OSI_DEVICE_EFI_PARTITION}" "$workdir/boot/efi" || show_error "Failed to mount EFI partition to $workdir/boot/efi"
+        sudo mount "${partition_path}3" "$workdir" || show_error "Failed to mount ${partition_path}3 to $workdir"
+    fi
 else
-    # EFI system
-    sudo mount "${OSI_DEVICE_EFI_PARTITION}" "$workdir" || show_error "Failed to mount EFI partition to $workdir"
+    # For other devices
+    if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
+        # Non-EFI system
+        sudo mount "$partition_path" "$workdir" || show_error "Failed to mount $partition_path to $workdir"
+    else
+        # EFI system
+        sudo mount "${OSI_DEVICE_EFI_PARTITION}" "$workdir/boot/efi" || show_error "Failed to mount EFI partition to $workdir/boot/efi"
+        sudo mount "${partition_path}2" "$workdir" || show_error "Failed to mount ${partition_path}2 to $workdir"
+    fi
 fi
 
 # Install system packages
