@@ -8,6 +8,19 @@ show_error() {
     exit 1
 }
 
+# Function to check if the device is an NVMe SSD
+is_nvme_ssd() {
+    local dev_name="${1##*/}"
+    if [[ -L "/sys/block/$dev_name" ]]; then
+        # Check if it's an NVMe device by checking the subsystem path
+        local subsystem_path=$(readlink -f "/sys/block/$dev_name/device/subsystem")
+        if [[ "$subsystem_path" == *"/nvme/"* ]]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Check if all required environment variables are set
 if [ -z "${OSI_LOCALE+x}" ] || \
    [ -z "${OSI_DEVICE_PATH+x}" ] || \
@@ -25,10 +38,12 @@ if mountpoint -q "$workdir"; then
 fi
 
 # Determine the partition path and partition table type
-if [[ $OSI_DEVICE_PATH == *"nvme"*"n"* ]]; then
+if is_nvme_ssd "$OSI_DEVICE_PATH"; then
+    # For NVMe SSD
     declare -r partition_path="${OSI_DEVICE_PATH}p"
     declare -r partition_table="gpt"
 else
+    # For other devices
     declare -r partition_path="${OSI_DEVICE_PATH}"
     if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
         declare -r partition_table="msdos"

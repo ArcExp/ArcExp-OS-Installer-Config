@@ -21,12 +21,6 @@ then
     exit 1
 fi
 
-# Enable systemd services
-if ! sudo arch-chroot "$workdir" systemctl enable gdm.service NetworkManager.service fstrim.timer; then
-    printf 'Failed to enable systemd services.\n'
-    exit 1
-fi
-
 # Set chosen locale and en_US.UTF-8 for it is required by some programs
 echo "$OSI_LOCALE UTF-8" | sudo tee -a "$workdir/etc/locale.gen"
 
@@ -152,8 +146,16 @@ if ! sudo arch-chroot "$workdir" pacman -Sy --noconfirm; then
 fi
 
 # Install packages from Chaotic-AUR
-if ! sudo arch-chroot "$workdir" pacman -S --noconfirm yay extension-manager protonup-qt qbittorrent-enhanced xone-dkms xpadneo-dkms xone-dongle-firmware ttf-ms-fonts onlyoffice-bin lutris-git gamescope-git mangohud-git lib32-mangohud-git; then
-    printf 'Failed to install packages from Chaotic-AUR.\n'
+aur_packages=("yay" "extension-manager" "protonup-qt" "qbittorrent-enhanced" "xone-dkms" "xpadneo-dkms" "xone-dongle-firmware" "ttf-ms-fonts" "onlyoffice-bin" "lutris-git" "gamescope-git" "mangohud-git" "lib32-mangohud-git" "timeshift-autosnap" "backintime")
+for package in "${aur_packages[@]}"; do
+    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm "$package"; then
+        printf "Failed to install %s from Chaotic-AUR.\n" "$package"
+    fi
+done
+
+# Enable systemd services
+if ! sudo arch-chroot "$workdir" systemctl enable gdm.service NetworkManager.service fstrim.timer; then
+    printf 'Failed to enable systemd services.\n'
     exit 1
 fi
 
@@ -201,7 +203,7 @@ elif grep -E "AuthenticAMD" <<< ${proc_type}; then
     proc_ucode=amd-ucode.img
 fi
 
-# Graphics Drivers find and install
+# Determine and install graphics drivers
 gpu_type=$(lspci)
 if grep -E "NVIDIA|GeForce" <<< ${gpu_type}; then
    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed nvidia-dkms nvidia-utils nvidia-settings cuda bumblebee; then
@@ -225,12 +227,13 @@ elif grep -E "Intel Corporation UHD" <<< ${gpu_type}; then
     fi
 fi
 
+# Regenerate grub config file
 if ! sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg; then
     printf 'Failed to generate GRUB configuration file.\n'
     exit 1
 fi
 
-# Finally, update system
+# Finally, update system and exit script
 if ! sudo arch-chroot "$workdir" pacman -Syu; then
     printf 'Failed to update the system.\n'
     exit 1
