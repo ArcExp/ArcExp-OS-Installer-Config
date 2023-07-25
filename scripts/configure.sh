@@ -95,7 +95,7 @@ echo -e "\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist" | sudo tee
 sudo arch-chroot "$workdir" pacman -Sy --noconfirm
 
 # Install packages from Chaotic-AUR
-aur_packages=("yay" "extension-manager" "protonup-qt" "qbittorrent-enhanced" "xone-dkms" "xpadneo-dkms" "xone-dongle-firmware" "ttf-ms-fonts" "onlyoffice-bin" "lutris-git" "gamescope-git" "mangohud-git" "lib32-mangohud-git" "timeshift-autosnap" "backintime")
+aur_packages=("yay" "extension-manager" "protonup-qt" "qbittorrent-enhanced" "xone-dkms" "xpadneo-dkms" "xone-dongle-firmware" "ttf-ms-fonts" "onlyoffice-bin" "lutris-git" "gamescope-git" "timeshift-autosnap" "mangohud-git")
 
 failed_packages=()
 for package in "${aur_packages[@]}"; do

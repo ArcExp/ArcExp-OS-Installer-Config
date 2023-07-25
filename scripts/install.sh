@@ -131,16 +131,8 @@ else
     fi
 fi
 
-# Install system packages from the pre-cached directory
-package_list=(
-    "$cache_dir"/base*
-    "$cache_dir"/base-devel*
-    "$cache_dir"/linux-zen*
-    "$cache_dir"/linux-firmware*
-    "$cache_dir"/dkms*
-)
-
-sudo pacstrap -c "$workdir" "${package_list[@]}" || show_error "Failed to install system packages"
+# Install system packages
+sudo pacstrap "$workdir" base base-devel linux-zen linux-zen-headers linux-firmware dkms
 
 # Populate the Arch Linux keyring inside chroot
 sudo arch-chroot "$workdir" pacman-key --init || show_error "Failed to initialize Arch Linux keyring"
@@ -155,7 +147,7 @@ sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr os-prober || s
 # Install GRUB based on firmware type (UEFI or BIOS)
 if [ -d "$workdir/sys/firmware/efi" ]; then
     # For UEFI systems
-    sudo arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB || show_error "Failed to install GRUB for NVMe SSD on UEFI"
+    sudo arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory="$workdir/boot/efi" --bootloader-id=GRUB || show_error "Failed to install GRUB for NVMe SSD on UEFI"
 else
     # For BIOS systems
     sudo arch-chroot "$workdir" grub-install --target=i386-pc "$OSI_DEVICE_PATH" || show_error "Failed to install GRUB for NVMe SSD on BIOS"
