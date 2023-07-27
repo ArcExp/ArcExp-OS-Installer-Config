@@ -16,16 +16,18 @@ is_nvme_ssd() {
     return 1
 }
 
-# Function to create partition
+# Function to create partitions
 create_partition() {
     if is_nvme_ssd "$OSI_DEVICE_PATH"; then
         # GPT partitioning for NVMe SSD
-        sudo parted "$OSI_DEVICE_PATH" mkpart ESP fat32 1MiB 1GB set 1 esp on || show_error "Failed to create ESP partition on $OSI_DEVICE_PATH"
-        sudo parted "$OSI_DEVICE_PATH" mkpart primary btrfs 1GB 100% || show_error "Failed to create btrfs partition on $OSI_DEVICE_PATH"
+        echo -e "g\nn\n1\n2048\n+1G\nt\nef\nn\n2\n\n\nw" | sudo fdisk "$OSI_DEVICE_PATH" || show_error "Failed to create partitions on $OSI_DEVICE_PATH"
+        sudo mkfs.fat -F32 "${OSI_DEVICE_PATH}p1" || show_error "Failed to create FAT32 filesystem on ${OSI_DEVICE_PATH}p1"
+        sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}p2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}p2"
     else
         # MBR partitioning for BIOS systems on physical hardware
-        sudo parted "$OSI_DEVICE_PATH" mkpart primary fat32 1MiB 1GB set 1 boot on || show_error "Failed to create boot partition on $OSI_DEVICE_PATH"
-        sudo parted "$OSI_DEVICE_PATH" mkpart primary btrfs 1GB 100% || show_error "Failed to create btrfs partition on $OSI_DEVICE_PATH"
+        echo -e "o\nn\np\n1\n2048\n+1G\nt\nef\nn\np\n2\n\n\nw" | sudo fdisk "$OSI_DEVICE_PATH" || show_error "Failed to create partitions on $OSI_DEVICE_PATH"
+        sudo mkfs.fat -F32 "${OSI_DEVICE_PATH}1" || show_error "Failed to create FAT32 filesystem on ${OSI_DEVICE_PATH}1"
+        sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}2"
     fi
 }
 
@@ -54,15 +56,15 @@ fi
 # Determine the partition path and partition table type
 if is_nvme_ssd "$OSI_DEVICE_PATH"; then
     # For NVMe SSD
-    declare -r partition_path="${OSI_DEVICE_PATH}p"
-    declare -r partition_table="gpt"
+    declare partition_path="${OSI_DEVICE_PATH}p"
+    declare partition_table="gpt"
 else
     # For other devices
     declare -r partition_path="${OSI_DEVICE_PATH}"
     if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
-        declare -r partition_table="msdos"
+        declare partition_table="msdos"
     else
-        declare -r partition_table="gpt"
+        declare partition_table="gpt"
     fi
 fi
 
