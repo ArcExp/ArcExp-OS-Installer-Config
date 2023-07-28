@@ -6,29 +6,60 @@ declare -r rootlabel='ArcExp_root'
 # Function to check if the device is an NVMe SSD
 is_nvme_ssd() {
     local dev_name="${1##*/}"
-    if [[ -L "/sys/block/$dev_name" ]]; then
-        # Check if it's an NVMe device by checking the subsystem path
-        local subsystem_path=$(readlink -f "/sys/block/$dev_name/device/subsystem")
-        if [[ "$subsystem_path" == *"/nvme/"* ]]; then
-            return 0
-        fi
+    if command -v nvme &>/dev/null; then
+        nvme list | awk -v dev="/dev/$dev_name" '$1 == dev { exit 0 } END { exit 1 }'
+    else
+        [[ -e "/sys/block/$dev_name" ]]
     fi
-    return 1
 }
 
-# Function to create partitions
+# Function to create partitions using parted
 create_partition() {
-    if is_nvme_ssd "$OSI_DEVICE_PATH"; then
-        # GPT partitioning for NVMe SSD
-        echo -e "g\nn\n1\n2048\n+1G\nt\nef\nn\n2\n\n\nw" | sudo fdisk "$OSI_DEVICE_PATH" || show_error "Failed to create partitions on $OSI_DEVICE_PATH"
-        sudo mkfs.fat -F32 "${OSI_DEVICE_PATH}p1" || show_error "Failed to create FAT32 filesystem on ${OSI_DEVICE_PATH}p1"
-        sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}p2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}p2"
+    local partition_table
+
+    # Check if the device is an NVMe SSD
+    local is_nvme
+    if is_nvme_ssd "${OSI_DEVICE_PATH##*/}"; then
+        is_nvme=true
     else
-        # MBR partitioning for BIOS systems on physical hardware
-        echo -e "o\nn\np\n1\n2048\n+1G\nt\nef\nn\np\n2\n\n\nw" | sudo fdisk "$OSI_DEVICE_PATH" || show_error "Failed to create partitions on $OSI_DEVICE_PATH"
-        sudo mkfs.fat -F32 "${OSI_DEVICE_PATH}1" || show_error "Failed to create FAT32 filesystem on ${OSI_DEVICE_PATH}1"
-        sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}2"
+        is_nvme=false
     fi
+
+    # Check if the device is larger than 2TB
+    local is_large_disk
+    local disk_size=$(lsblk -n -b -o SIZE "$OSI_DEVICE_PATH")
+    local two_tb_bytes=$((2 * 1024 * 1024 * 1024 * 1024)) # 2TB in bytes
+    if [[ $disk_size -gt $two_tb_bytes ]]; then
+        is_large_disk=true
+    else
+        is_large_disk=false
+    fi
+
+    # Determine the partition table type
+    if [[ $is_large_disk == true || $is_nvme == true || ! -d "$workdir/sys/firmware/efi" ]]; then
+        partition_table="gpt"
+    else
+        partition_table="msdos"
+    fi
+
+    # Create partitions based on the determined partition table type using parted
+    sudo parted -s "$OSI_DEVICE_PATH" mklabel "$partition_table"
+
+    if [[ $is_nvme == true ]]; then
+        # GPT partitioning for NVMe SSD
+        sudo parted -s "$OSI_DEVICE_PATH" mkpart primary fat32 2048s 1GB || return 1
+        sudo mkfs.fat -F32 "${OSI_DEVICE_PATH}p1" || return 1
+        sudo parted -s "$OSI_DEVICE_PATH" mkpart primary btrfs 1GB 100% || return 1
+        sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}p2" || return 1
+    else
+        # GPT partitioning for BIOS systems or MBR partitioning for other devices
+        sudo parted -s "$OSI_DEVICE_PATH" mkpart primary fat32 2048s 1GB || return 1
+        sudo mkfs.fat -F32 "${OSI_DEVICE_PATH}1" || return 1
+        sudo parted -s "$OSI_DEVICE_PATH" mkpart primary btrfs 1GB 100% || return 1
+        sudo mkfs.btrfs -f "${OSI_DEVICE_PATH}2" || return 1
+    fi
+
+    echo "$partition_table"
 }
 
 # Function to display an error and exit
@@ -53,25 +84,11 @@ if mountpoint -q "$workdir"; then
     show_error "$workdir is already a mountpoint, unmount this directory and try again"
 fi
 
-# Determine the partition path and partition table type
-if is_nvme_ssd "$OSI_DEVICE_PATH"; then
-    # For NVMe SSD
-    declare partition_path="${OSI_DEVICE_PATH}p"
-    declare partition_table="gpt"
-else
-    # For other devices
-    declare -r partition_path="${OSI_DEVICE_PATH}"
-    if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
-        declare partition_table="msdos"
-    else
-        declare partition_table="gpt"
-    fi
-fi
-
 # Write partition table to the disk
 if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
     # Disk-level partitioning
-    sudo parted "${OSI_DEVICE_PATH}" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+    partition_table=$(create_partition)
+    sudo parted "$OSI_DEVICE_PATH" set 1 boot on || return 1
 
     if is_nvme_ssd "$OSI_DEVICE_PATH"; then
         # GPT partitioning for NVMe SSD
@@ -129,21 +146,21 @@ if is_nvme_ssd "$OSI_DEVICE_PATH"; then
     # For NVMe SSD
     if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
         # Non-EFI system
-        sudo mount "${partition_path}2" "$workdir" || show_error "Failed to mount ${partition_path}2 to $workdir"
+        sudo mount "${OSI_DEVICE_PATH}2" "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}2 to $workdir"
     else
         # EFI system
         sudo mount "${OSI_DEVICE_EFI_PARTITION}" "$workdir/boot/efi" || show_error "Failed to mount EFI partition to $workdir/boot/efi"
-        sudo mount "${partition_path}2" "$workdir" || show_error "Failed to mount ${partition_path}2 to $workdir"
+        sudo mount "${OSI_DEVICE_PATH}2" "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}2 to $workdir"
     fi
 else
     # For other devices
     if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
         # Non-EFI system
-        sudo mount "$partition_path"2 "$workdir" || show_error "Failed to mount $partition_path"2 to $workdir"
+        sudo mount "${OSI_DEVICE_PATH}"2 "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}2 to $workdir"
     else
         # EFI system
         sudo mount "${OSI_DEVICE_EFI_PARTITION}" "$workdir/boot/efi" || show_error "Failed to mount EFI partition to $workdir/boot/efi"
-        sudo mount "$partition_path"2 "$workdir" || show_error "Failed to mount $partition_path"2 to $workdir"
+        sudo mount "${OSI_DEVICE_PATH}"2 "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}2 to $workdir"
     fi
 fi
 
@@ -155,7 +172,7 @@ sudo arch-chroot "$workdir" pacman-key --init || show_error "Failed to initializ
 sudo arch-chroot "$workdir" pacman-key --populate archlinux || show_error "Failed to populate Arch Linux keyring"
 
 # Install desktop environment packages
-sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-logs gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak xdg-user-dirs-gtk || show_error "Failed to install desktop environment packages"
+sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-shows gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak xdg-user-dirs-gtk || show_error "Failed to install desktop environment packages"
 
 # Install grub packages including os-prober
 sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr os-prober || show_error "Failed to install GRUB, efibootmgr, or os-prober"
@@ -179,3 +196,4 @@ sudo genfstab -U "$workdir" | sudo tee "$workdir/etc/fstab" || show_error "Faile
 sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file"
 
 exit 0
+
