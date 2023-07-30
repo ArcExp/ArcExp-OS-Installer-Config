@@ -162,10 +162,12 @@ sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr os-prober || s
 # Install GRUB based on firmware type (UEFI or BIOS)
 if [ -d "$workdir/sys/firmware/efi" ]; then
     # For UEFI systems
-    sudo arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory="$workdir/boot/efi" --bootloader-id=GRUB || show_error "Failed to install GRUB for NVMe SSD on UEFI"
+    sudo arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory="/boot/efi" --bootloader-id=GRUB || show_error "Failed to install GRUB on NVME drive on UEFI system"
+    sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for UEFI system"
 else
     # For BIOS systems
-    sudo arch-chroot "$workdir" grub-install --target=i386-pc "$OSI_DEVICE_PATH" || show_error "Failed to install GRUB for NVMe SSD on BIOS"
+    sudo arch-chroot "$workdir" grub-install --target=i386-pc "$OSI_DEVICE_PATH" || show_error "Failed to install GRUB on BIOS system"
+    sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for BIOS system"
 fi
 
 # Run os-prober to collect information about other installed operating systems
@@ -173,8 +175,5 @@ sudo arch-chroot "$workdir" os-prober || show_error "Failed to run os-prober"
 
 # Generate the fstab file
 sudo genfstab -U "$workdir" | sudo tee "$workdir/etc/fstab" || show_error "Failed to generate fstab file"
-
-# Generate the GRUB configuration file
-sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file"
 
 exit 0
