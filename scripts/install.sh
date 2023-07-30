@@ -27,36 +27,27 @@ is_nvme_ssd() {
     return 1
 }
 
-# Function to create partitions using parted
+# Function to create partitions using gdisk
 create_partition() {
     local fstype=$1
     local start=$2
     local end=$3
-    sudo parted "$OSI_DEVICE_PATH" mkpart primary "$fstype" "$start" "$end" --script || show_error "Failed to create $fstype partition on $OSI_DEVICE_PATH"
+    sudo gdisk "$OSI_DEVICE_PATH" <<EOF
+n
+$start
+$end
+$fstype
+w
+Y
+EOF
 }
 
 # Function to display partition table information
 display_partition_table_info() {
     echo "Partition Table Information for $OSI_DEVICE_PATH:"
-    sudo parted -s "$OSI_DEVICE_PATH" print
+    sudo gdisk -l "$OSI_DEVICE_PATH"
     echo
 }
-
-# Check if all required environment variables are set
-if [ -z "${OSI_LOCALE+x}" ] || \
-   [ -z "${OSI_DEVICE_PATH+x}" ] || \
-   [ -z "${OSI_DEVICE_IS_PARTITION+x}" ] || \
-   [ -z "${OSI_DEVICE_EFI_PARTITION+x}" ] || \
-   [ -z "${OSI_USE_ENCRYPTION+x}" ] || \
-   [ -z "${OSI_ENCRYPTION_PIN+x}" ]
-then
-    show_error "install.sh called without all environment variables set!"
-fi
-
-# Check if something is already mounted to $workdir
-if mountpoint -q "$workdir"; then
-    show_error "$workdir is already a mountpoint, unmount this directory and try again"
-fi
 
 # Determine the partition table type
 if is_nvme_ssd "$OSI_DEVICE_PATH"; then
@@ -66,18 +57,16 @@ if is_nvme_ssd "$OSI_DEVICE_PATH"; then
     # Write partition table to the disk
     if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
         # Disk-level partitioning
-        sudo parted "$OSI_DEVICE_PATH" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+        sudo gdisk "$OSI_DEVICE_PATH" --clear || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
 
         # GPT partitioning for NVMe SSD
-        create_partition fat32 1MiB 1GB
-        sudo parted "$OSI_DEVICE_PATH" set 1 esp on || show_error "Failed to set boot flag on /boot/efi partition"
-        sudo parted "$OSI_DEVICE_PATH" set 1 boot on || show_error "Failed to set boot flag on /boot/efi partition"
-        create_partition btrfs 1GB 100%
+        # Create a 1GB EFI System Partition (ESP)
+        create_partition ef00 2048s 1953791s   # 1GB EFI System Partition (ESP)
+        create_partition 8300 1953792s -1s     # Remaining space for the root partition
 
         # Format the partitions
-        partition_path="${OSI_DEVICE_PATH}p"
-        sudo mkfs.fat -F32 "${partition_path}1" || show_error "Failed to create FAT32 filesystem on ${partition_path}1"
-        sudo mkfs.btrfs -f -L "$rootlabel" "${partition_path}2" || show_error "Failed to create Btrfs filesystem on ${partition_path}2"
+        sudo mkfs.fat -F32 "${OSI_DEVICE_PATH}p1" || show_error "Failed to create FAT32 filesystem on ${OSI_DEVICE_PATH}p1"
+        sudo mkfs.btrfs -f -L "$rootlabel" "${OSI_DEVICE_PATH}p2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}p2"
     fi
 else
     # For other devices
@@ -90,11 +79,19 @@ else
     # Write partition table to the disk
     if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
         # Disk-level partitioning
-        sudo parted "$OSI_DEVICE_PATH" mklabel "$partition_table" --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+        sudo gdisk "$OSI_DEVICE_PATH" --clear || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
 
         # MBR partitioning for BIOS systems on physical hardware
-        create_partition btrfs 1MiB 100%
-        sudo parted "$OSI_DEVICE_PATH" set 1 boot on || show_error "Failed to set boot flag on /boot partition"
+        create_partition 8300 2048s -1s
+
+        # Set boot flag on the partition (for BIOS systems)
+        sudo gdisk "$OSI_DEVICE_PATH" <<EOF
+x
+a
+2
+w
+Y
+EOF
     fi
 fi
 
