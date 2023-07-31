@@ -7,39 +7,12 @@ set -x
 
 declare -r workdir='/mnt'
 declare -r rootlabel='ArcExp_root'
+declare -r osidir='/etc/os-installer'
 
 # Function to display an error and exit
 show_error() {
     printf "ERROR: %s\n" "$1" >&2
     exit 1
-}
-
-# Function to check if the device is an NVMe SSD
-is_nvme_ssd() {
-    local dev_name="${1##*/}"
-    if [[ -L "/sys/block/$dev_name" ]]; then
-        # Check if it's an NVMe device by checking the subsystem path
-        local subsystem_path=$(readlink -f "/sys/block/$dev_name/device/subsystem")
-        if [[ "$subsystem_path" == *"/nvme/"* ]]; then
-            return 0
-        fi
-    fi
-    return 1
-}
-
-# Function to create partitions using gdisk
-create_partition() {
-    local fstype=$1
-    local start=$2
-    local end=$3
-    sudo gdisk "$OSI_DEVICE_PATH" <<EOF
-n
-$start
-$end
-$fstype
-w
-Y
-EOF
 }
 
 # Function to display partition table information
@@ -49,98 +22,67 @@ display_partition_table_info() {
     echo
 }
 
-# Determine the partition table type
-if is_nvme_ssd "$OSI_DEVICE_PATH"; then
-    # For NVMe SSD
-    declare -r partition_table="gpt"
-
-    # Write partition table to the disk
-    if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
-        # Disk-level partitioning
-        sudo gdisk "$OSI_DEVICE_PATH" --clear || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
-
-        # GPT partitioning for NVMe SSD
-        # Create a 1GB EFI System Partition (ESP)
-        create_partition ef00 2048s 1953791s   # 1GB EFI System Partition (ESP)
-        create_partition 8300 1953792s -1s     # Remaining space for the root partition
-
-        # Format the partitions
-        sudo mkfs.fat -F32 "${OSI_DEVICE_PATH}p1" || show_error "Failed to create FAT32 filesystem on ${OSI_DEVICE_PATH}p1"
-        sudo mkfs.btrfs -f -L "$rootlabel" "${OSI_DEVICE_PATH}p2" || show_error "Failed to create Btrfs filesystem on ${OSI_DEVICE_PATH}p2"
-    fi
+# Write partition table to the disk
+if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
+	# Booted in to UEFI, lets make the disk GPT
+	sudo sfdisk $OSI_DEVICE_PATH < $osidir/gpt.sfdisk
 else
-    # For other devices
-    if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
-        declare -r partition_table="msdos"
-    else
-        declare -r partition_table="gpt"
-    fi
+	# Booted in to BIOS, lets make the disk MBR
+	sudo sfdisk $OSI_DEVICE_PATH < $osidir/mbr.sfdisk
+fi
 
-    # Write partition table to the disk
-    if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
-        # Disk-level partitioning
-        sudo gdisk "$OSI_DEVICE_PATH" --clear || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
 
-        # MBR partitioning for BIOS systems on physical hardware
-        create_partition 8300 2048s -1s
-
-        # Set boot flag on the partition (for BIOS systems)
-        sudo gdisk "$OSI_DEVICE_PATH" <<EOF
-x
-a
-2
-w
-Y
-EOF
-    fi
+# NVMe drives follow a slightly different naming scheme to other block devices
+# this will change `/dev/nvme0n1` to `/dev/nvme0n1p` for easier parsing later
+if [[ $OSI_DEVICE_PATH == *"nvme"*"n"* ]]; then
+	declare -r partition_path="${OSI_DEVICE_PATH}p"
+else
+	declare -r partition_path="${OSI_DEVICE_PATH}"
 fi
 
 # Check if encryption is requested, write filesystems accordingly
-if [[ "$OSI_USE_ENCRYPTION" -eq 1 ]]; then
-    # If user requested disk encryption
-    if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
-        # If target is a drive
-        echo "$OSI_ENCRYPTION_PIN" | sudo cryptsetup -q luksFormat "${OSI_DEVICE_PATH}2" || show_error "Failed to format ${OSI_DEVICE_PATH}2 with LUKS"
-        echo "$OSI_ENCRYPTION_PIN" | sudo cryptsetup open "${OSI_DEVICE_PATH}2" "$rootlabel" - || show_error "Failed to open ${OSI_DEVICE_PATH}2 with LUKS"
-        sudo mkfs.btrfs -f "/dev/mapper/$rootlabel" || show_error "Failed to create Btrfs filesystem on /dev/mapper/$rootlabel"
-    else
-        # If target is a partition
-        sudo mkfs.btrfs -f "$OSI_DEVICE_PATH" || show_error "Failed to create Btrfs filesystem on $OSI_DEVICE_PATH"
-    fi
-else
-    # If no disk encryption requested
-    if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
-        # If target is a drive
-        yes | sudo mkfs.btrfs -f "$OSI_DEVICE_PATH" || show_error "Failed to create Btrfs filesystem on $OSI_DEVICE_PATH"
-    else
-        # If target is a partition
-        yes | sudo mkfs.btrfs -f "$OSI_DEVICE_PATH" || show_error "Failed to create Btrfs filesystem on $OSI_DEVICE_PATH"
-    fi
-fi
+if [[ $OSI_USE_ENCRYPTION -eq 1 ]]; then
 
-# Mount the root partition
-sudo mkdir -p "$workdir" || show_error "Failed to create mount directory $workdir"
+	# If user requested disk encryption
+	if [[ $OSI_DEVICE_IS_PARTITION -eq 0 ]]; then
 
-if is_nvme_ssd "$OSI_DEVICE_PATH"; then
-    # For NVMe SSD
-    if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
-        # Non-EFI system
-        sudo mount "${OSI_DEVICE_PATH}1" "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}1 to $workdir"
-    else
-        # EFI system
-        sudo mount "${OSI_DEVICE_EFI_PARTITION}" "$workdir/boot/efi" || show_error "Failed to mount EFI partition to $workdir/boot/efi"
-        sudo mount "${OSI_DEVICE_PATH}2" "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}2 to $workdir"
-    fi
+		# If target is a drive
+		sudo mkfs.fat -F32 ${partition_path}1
+		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup -q luksFormat ${partition_path}2
+		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup open ${partition_path}2 $rootlabel -
+		sudo mkfs.btrfs -f -L $rootlabel /dev/mapper/$rootlabel
+
+		sudo mount -o compress=zstd /dev/mapper/$rootlabel $workdir
+		sudo mount --mkdir ${partition_path}1 $workdir/boot
+		sudo btrfs subvolume create $workdir/home
+
+	else
+
+		# If target is a partition
+		printf 'PARTITION TARGET NOT YET IMPLEMENTED BECAUSE OF EFI DETECTION BUG\n'
+		exit 1
+	fi
+
 else
-    # For other devices
-    if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
-        # Non-EFI system
-        sudo mount "$OSI_DEVICE_PATH" "$workdir" || show_error "Failed to mount $OSI_DEVICE_PATH to $workdir"
-    else
-        # EFI system
-        sudo mount "${OSI_DEVICE_EFI_PARTITION}" "$workdir/boot/efi" || show_error "Failed to mount EFI partition to $workdir/boot/efi"
-        sudo mount "${OSI_DEVICE_PATH}2" "$workdir" || show_error "Failed to mount ${OSI_DEVICE_PATH}2 to $workdir"
-    fi
+
+	# If no disk encryption requested
+	if [[ $OSI_DEVICE_IS_PARTITION -eq 0 ]]; then
+
+		# If target is a drive
+		sudo mkfs.fat -F32 ${partition_path}1
+		sudo mkfs.btrfs -f -L $rootlabel ${partition_path}2
+
+		sudo mount -o compress=zstd ${partition_path}2 $workdir
+		sudo mount --mkdir ${partition_path}1 $workdir/boot
+		sudo btrfs subvolume create $workdir/home
+
+	else
+
+		# If target is a partition
+		printf 'PARTITION TARGET NOT YET IMPLEMENTED BECAUSE OF EFI DETECTION BUG\n'
+		exit 1
+	fi
+
 fi
 
 # Install system packages
@@ -163,7 +105,7 @@ if [ -d "$workdir/sys/firmware/efi" ]; then
     sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for UEFI system"
 else
     # For BIOS systems
-    sudo arch-chroot "$workdir" grub-install --target=i386-pc "$OSI_DEVICE_PATH" || show_error "Failed to install GRUB on BIOS system"
+    sudo arch-chroot "$workdir" grub-install --target=i386-pc "$partition_path" || show_error "Failed to install GRUB on BIOS system"
     sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for BIOS system"
 fi
 
