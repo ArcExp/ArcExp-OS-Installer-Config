@@ -1,0 +1,10 @@
+label: gpt
+label-id: 80BAAAEB-D06B-374A-9D86-05FF83243143
+device: /dev/vda
+unit: sectors
+first-lba: 2048
+last-lba: 41943006
+sector-size: 512
+
+/dev/vda1 : start=        2048, size=     2097152, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+/dev/vda2 : start=     2099200, type=4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
