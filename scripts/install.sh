@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 
-# Enable debugging and log the output to a file
-LOG_FILE="/tmp/install_script_log.txt"
-exec > >(tee -a "$LOG_FILE") 2>&1
-set -x
-
 declare -r workdir='/mnt'
-declare -r rootlabel='ArcExp_root'
-declare -r osidir='/etc/os-installer'
+
+# Function to check if the device is an NVMe SSD
+is_nvme_ssd() {
+    local dev_name="${1##*/}"
+    if [[ -L "/sys/block/$dev_name" ]]; then
+        # Check if it's an NVMe device by checking the subsystem path
+        local subsystem_path=$(readlink -f "/sys/block/$dev_name/device/subsystem")
+        if [[ "$subsystem_path" == *"/nvme/"* ]]; then
+            return 0
+        fi
+    fi
+    return 1
+}
 
 # Function to display an error and exit
 show_error() {
@@ -15,74 +21,87 @@ show_error() {
     exit 1
 }
 
-# Function to display partition table information
-display_partition_table_info() {
-    echo "Partition Table Information for $OSI_DEVICE_PATH:"
-    sudo gdisk -l "$OSI_DEVICE_PATH"
-    echo
-}
+# Check if all required environment variables are set
+if [ -z "${OSI_LOCALE+x}" ] || \
+   [ -z "${OSI_DEVICE_PATH+x}" ] || \
+   [ -z "${OSI_DEVICE_IS_PARTITION+x}" ] || \
+   [ -z "${OSI_DEVICE_EFI_PARTITION+x}" ] || \
+   [ -z "${OSI_USE_ENCRYPTION+x}" ] || \
+   [ -z "${OSI_ENCRYPTION_PIN+x}" ]
+then
+    show_error "install.sh called without all environment variables set!"
+fi
+
+# Check if something is already mounted to $workdir
+if mountpoint -q "$workdir"; then
+    show_error "$workdir is already a mountpoint, unmount this directory and try again"
+fi
+
+# Determine the NVMe drive partition path
+if [[ $OSI_DEVICE_PATH == *"nvme"*"n"* ]]; then
+    declare -r partition_path="${OSI_DEVICE_PATH}p"
+else
+    declare -r partition_path="${OSI_DEVICE_PATH}"
+fi
+
+# Wipe partition signatures from the disk
+sudo wipefs -a "$OSI_DEVICE_PATH"
 
 # Write partition table to the disk
-if [[ ! -d "$workdir/sys/firmware/efi" ]]; then
-	# Booted in to UEFI, lets make the disk GPT
-	sudo sfdisk $OSI_DEVICE_PATH < $osidir/gpt.sfdisk
-else
-	# Booted in to BIOS, lets make the disk MBR
-	sudo sfdisk $OSI_DEVICE_PATH < $osidir/mbr.sfdisk
+if [ "${OSI_DEVICE_IS_PARTITION}" -eq 0 ]; then
+    # Disk-level partitioning
+    if is_nvme_ssd "$OSI_DEVICE_PATH"; then
+        # GPT partitioning for NVMe SSD
+        sudo parted "${OSI_DEVICE_PATH}" mklabel gpt --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+        sudo parted "${OSI_DEVICE_PATH}" mkpart ESP fat32 1MiB 1024MiB --script || show_error "Failed to create ESP partition on $OSI_DEVICE_PATH"
+        sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on ESP partition"
+        sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 1024MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+    else
+        # MBR partitioning for BIOS systems on physical hardware
+        sudo parted "${OSI_DEVICE_PATH}" mklabel msdos --script || show_error "Failed to create partition table on $OSI_DEVICE_PATH"
+        sudo parted "${OSI_DEVICE_PATH}" mkpart primary ext4 1MiB 512MiB --script || show_error "Failed to create /boot partition on $OSI_DEVICE_PATH"
+        sudo parted "${OSI_DEVICE_PATH}" set 1 boot on || show_error "Failed to set boot flag on /boot partition"
+        sudo parted "${OSI_DEVICE_PATH}" mkpart primary btrfs 512MiB 100% --script || show_error "Failed to create Btrfs partition on $OSI_DEVICE_PATH"
+    fi
 fi
 
-
-# NVMe drives follow a slightly different naming scheme to other block devices
-# this will change `/dev/nvme0n1` to `/dev/nvme0n1p` for easier parsing later
-if [[ $OSI_DEVICE_PATH == *"nvme"*"n"* ]]; then
-	declare -r partition_path="${OSI_DEVICE_PATH}p"
-else
-	declare -r partition_path="${OSI_DEVICE_PATH}"
-fi
+# Format the ESP (boot) partition (assuming it's the first partition)
+sudo mkfs.fat -F32 "${partition_path}1" || show_error "Failed to create FAT32 filesystem on ${partition_path}1"
 
 # Check if encryption is requested, write filesystems accordingly
-if [[ $OSI_USE_ENCRYPTION -eq 1 ]]; then
-
-	# If user requested disk encryption
-	if [[ $OSI_DEVICE_IS_PARTITION -eq 0 ]]; then
-
-		# If target is a drive
-		sudo mkfs.fat -F32 ${partition_path}1
-		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup -q luksFormat ${partition_path}2
-		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup open ${partition_path}2 $rootlabel -
-		sudo mkfs.btrfs -f -L $rootlabel /dev/mapper/$rootlabel
-
-		sudo mount -o compress=zstd /dev/mapper/$rootlabel $workdir
-		sudo mount --mkdir ${partition_path}1 $workdir/boot
-		sudo btrfs subvolume create $workdir/home
-
-	else
-
-		# If target is a partition
-		printf 'PARTITION TARGET NOT YET IMPLEMENTED BECAUSE OF EFI DETECTION BUG\n'
-		exit 1
-	fi
-
+if [[ "$OSI_USE_ENCRYPTION" -eq 1 ]]; then
+    # If user requested disk encryption
+    if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
+        # If target is a drive
+        printf '%s\n' "$OSI_ENCRYPTION_PIN" | sudo cryptsetup -q luksFormat "${partition_path}2" || show_error "Failed to format ${partition_path}2 with LUKS"
+        printf '%s\n' "$OSI_ENCRYPTION_PIN" | sudo cryptsetup open "${partition_path}2" "$rootlabel" - || show_error "Failed to open ${partition_path}2 with LUKS"
+        sudo mkfs.btrfs -f "/dev/mapper/$rootlabel" || show_error "Failed to create Btrfs filesystem on /dev/mapper/$rootlabel"
+    else
+        # If target is a partition
+        sudo mkfs.btrfs -f "${partition_path}2" || show_error "Failed to create Btrfs filesystem on ${partition_path}2"
+    fi
 else
+    # If no disk encryption requested
+    if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
+        # If target is a drive
+        yes | sudo mkfs.btrfs -f "${partition_path}2" || show_error "Failed to create Btrfs filesystem on ${partition_path}2"
+    else
+        # If target is a partition
+        yes | sudo mkfs.btrfs -f "${partition_path}2" || show_error "Failed to create Btrfs filesystem on ${partition_path}2"
+    fi
+fi
 
-	# If no disk encryption requested
-	if [[ $OSI_DEVICE_IS_PARTITION -eq 0 ]]; then
-
-		# If target is a drive
-		sudo mkfs.fat -F32 ${partition_path}1
-		sudo mkfs.btrfs -f -L $rootlabel ${partition_path}2
-
-		sudo mount -o compress=zstd ${partition_path}2 $workdir
-		sudo mount --mkdir ${partition_path}1 $workdir/boot
-		sudo btrfs subvolume create $workdir/home
-
-	else
-
-		# If target is a partition
-		printf 'PARTITION TARGET NOT YET IMPLEMENTED BECAUSE OF EFI DETECTION BUG\n'
-		exit 1
-	fi
-
+# Mount the root partition
+if [[ "$OSI_DEVICE_IS_PARTITION" -eq 0 ]]; then
+    # If target is a drive
+    sudo mkdir -p "$workdir/boot" "$workdir" || show_error "Failed to create mount directories $workdir/boot $workdir"
+    sudo mount "${partition_path}2" "$workdir" || show_error "Failed to mount ${partition_path}2 to $workdir"
+    sudo mount "${partition_path}1" "$workdir/boot" || show_error "Failed to mount ${partition_path}1 to $workdir/boot"
+else
+    # If target is a partition
+    sudo mkdir -p "$workdir/boot" "$workdir" || show_error "Failed to create mount directories $workdir/boot $workdir"
+    sudo mount "${partition_path}2" "$workdir" || show_error "Failed to mount ${partition_path}2 to $workdir"
+    sudo mount "${partition_path}1" "$workdir/boot" || show_error "Failed to mount ${partition_path}1 to $workdir/boot"
 fi
 
 # Install system packages
@@ -93,26 +112,24 @@ sudo arch-chroot "$workdir" pacman-key --init || show_error "Failed to initializ
 sudo arch-chroot "$workdir" pacman-key --populate archlinux || show_error "Failed to populate Arch Linux keyring"
 
 # Install desktop environment packages
-sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak xdg-user-dirs-gtk || show_error "Failed to install desktop environment packages"
+sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-logs gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak xdg-user-dirs-gtk bluez bluez-utils || show_error "Failed to install desktop environment packages"
 
-# Install grub packages including os-prober
-sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr os-prober || show_error "Failed to install GRUB, efibootmgr, or os-prober"
-
-# Install GRUB based on firmware type (UEFI or BIOS)
+# Install GRUB based on firmware type (BIOS or UEFI)
 if [ -d "$workdir/sys/firmware/efi" ]; then
-    # For UEFI systems
-    sudo arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory="/boot/efi" --bootloader-id=GRUB || show_error "Failed to install GRUB on NVME drive on UEFI system"
-    sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for UEFI system"
+    # UEFI system
+    sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr || show_error "Failed to install GRUB and efibootmgr"
+    sudo arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB || show_error "Failed to install GRUB for UEFI"
 else
-    # For BIOS systems
-    sudo arch-chroot "$workdir" grub-install --target=i386-pc "$partition_path" || show_error "Failed to install GRUB on BIOS system"
-    sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for BIOS system"
+    # BIOS system
+    sudo arch-chroot "$workdir" pacman -S --noconfirm grub || show_error "Failed to install GRUB"
+    sudo arch-chroot "$workdir" grub-install --target=i386-pc "${OSI_DEVICE_PATH}" || show_error "Failed to install GRUB for BIOS"
 fi
 
-# Run os-prober to collect information about other installed operating systems
-sudo arch-chroot "$workdir" os-prober || show_error "Failed to run os-prober"
+# Generate the GRUB configuration file
+sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file"
 
 # Generate the fstab file
 sudo genfstab -U "$workdir" | sudo tee "$workdir/etc/fstab" || show_error "Failed to generate fstab file"
 
 exit 0
+
