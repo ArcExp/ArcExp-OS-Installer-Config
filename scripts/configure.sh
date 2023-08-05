@@ -56,13 +56,27 @@ fi
 # Set hostname
 echo 'ArcExp' | sudo tee "$workdir/etc/hostname"
 
-# Add user, setup groups, set password, and set user properties
-if ! sudo arch-chroot "$workdir" useradd -m -s /bin/bash -p NP "$OSI_USER_NAME"; then
+# Function to generate a hashed password
+generate_hashed_password() {
+    local password="$1"
+    local salt="$(openssl rand -base64 12)"
+    echo "$password" | mkpasswd --method=sha-512 --salt="$salt" --stdin
+}
+
+# Add user, setup groups, and set user properties
+if ! sudo arch-chroot "$workdir" useradd -m -s /bin/bash "$OSI_USER_NAME"; then
     printf 'Failed to add user.\n'
     exit 1
 fi
 
-echo "$OSI_USER_NAME:$OSI_USER_PASSWORD" | sudo arch-chroot "$workdir" chpasswd
+# Generate hashed password
+hashed_password=$(generate_hashed_password "$OSI_USER_PASSWORD")
+
+# Set hashed password for the user
+if ! echo "$OSI_USER_NAME:$hashed_password" | sudo arch-chroot "$workdir" chpasswd --encrypted; then
+    printf 'Failed to set user password.\n'
+    exit 1
+fi
 
 if ! sudo arch-chroot "$workdir" usermod -a -G wheel "$OSI_USER_NAME"; then
     printf 'Failed to modify user group.\n'
