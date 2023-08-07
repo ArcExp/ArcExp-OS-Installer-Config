@@ -202,6 +202,7 @@ install_flatpak_packages() {
     local flatpak_packages=(
         "flathub com.discordapp.Discord"
         "flathub com.github.tchx84.Flatseal"
+        "flathub com.usebottles.bottles"
     )
     for package in "${flatpak_packages[@]}"; do
         if ! yes | sudo arch-chroot "$workdir" flatpak install -y "$package"; then
