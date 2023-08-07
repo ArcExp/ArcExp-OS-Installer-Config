@@ -43,7 +43,7 @@ if ! sudo arch-chroot "$workdir" locale-gen; then
 fi
 
 # Add dconf tweaks for GNOME desktop configuration
-if ! sudo cp -rv "$osidir/dconf-settings/dconf" "$workdir/etc/"; then
+if ! sudo cp -rv "$osidir/misc/dconf" "$workdir/etc/"; then
     printf 'Failed to copy dconf tweaks.\n'
     exit 1
 fi
@@ -165,15 +165,57 @@ if ! sudo arch-chroot "$workdir" pacman -Sy --noconfirm; then
     exit 1
 fi
 
-# Install packages from Chaotic-AUR
-if ! sudo arch-chroot "$workdir" pacman -S --noconfirm yay extension-manager protonup-qt qbittorrent-enhanced xone-dkms xpadneo-dkms xone-dongle-firmware ttf-ms-fonts onlyoffice-bin lutris-git gamescope-git mangohud-git lib32-mangohud-git; then
-    printf 'Failed to install packages from Chaotic-AUR.\n'
-    exit 1
-fi
+# List of packages from Chaotic-AUR to install
+chaotic_packages=(
+    yay
+    extension-manager
+    protonup-qt
+    qbittorrent-enhanced
+    xone-dkms
+    xpadneo-dkms
+    xone-dongle-firmware
+    ttf-ms-fonts
+    onlyoffice-bin
+    lutris-git
+    gamescope-git
+    mangohud-git
+    lib32-mangohud-git
+    linux-cachyos
+    linux-cachyos-headers
+)
 
-yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.discordapp.Discord
+# Function to install packages from Chaotic-AUR and handle failures
+install_chaotic_packages() {
+    local package
+    for package in "${chaotic_packages[@]}"; do
+        if ! sudo arch-chroot "$workdir" pacman -S --noconfirm "$package"; then
+            printf 'Failed to install package "%s" from Chaotic-AUR. Skipping.\n' "$package"
+        fi
+    done
+}
 
-yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.github.tchx84.Flatseal
+# Install packages from Chaotic-AUR and handle failures
+install_chaotic_packages
+
+# Function to install Flatpak packages and handle failures
+install_flatpak_packages() {
+    local flatpak_packages=(
+        "flathub com.discordapp.Discord"
+        "flathub com.github.tchx84.Flatseal"
+    )
+    for package in "${flatpak_packages[@]}"; do
+        if ! yes | sudo arch-chroot "$workdir" flatpak install -y "$package"; then
+            printf 'Failed to install package "%s". Skipping.\n' "$package"
+        fi
+    done
+}
+
+# Install Flatpak packages and handle failures
+install_flatpak_packages
+
+sudo arch-chroot "$workdir" pacman -R --noconfirm linux-zen linux-zen-headers
+
+sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg
 
 # Remove Chaotic-AUR keys, keyring, and mirrorlist
 if ! sudo arch-chroot "$workdir" pacman -Rns --noconfirm chaotic-keyring; then
@@ -237,11 +279,6 @@ elif grep -E "Intel Corporation UHD" <<< ${gpu_type}; then
         printf 'Failed to install Intel UHD Graphics drivers.\n'
         exit 1
     fi
-fi
-
-if ! sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg; then
-    printf 'Failed to generate GRUB configuration file.\n'
-    exit 1
 fi
 
 # Finally, update system

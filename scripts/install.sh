@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 
-# Enable debugging and log the output to a file
-LOG_FILE="/tmp/install_script_log.txt"
-exec > >(tee -a "$LOG_FILE") 2>&1
-set -x
-
 declare -r workdir='/mnt'
 declare -r rootlabel='ArcExp_root'
 declare -r osidir='/etc/os-installer'
+
+sudo pacman -Syy && sudo pacman-key --init && sudo pacman-key --populate archlinux
 
 # Function to display an error and exit
 show_error() {
@@ -81,32 +78,27 @@ else
 
 fi
 
-# Install system packages
-sudo pacstrap "$workdir" base base-devel linux-zen linux-zen-headers linux-firmware dkms || show_error "Failed to install system packages"
+# Install basic system packages
+sudo pacstrap "$workdir" base base-devel linux-zen linux-zen-headers linux-firmware dkms
+
+# Install remaining packages
+sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak wget xdg-user-dirs-gtk || show_error "Failed to install desktop environment packages"
 
 # Populate the Arch Linux keyring inside chroot
 sudo arch-chroot "$workdir" pacman-key --init || show_error "Failed to initialize Arch Linux keyring"
 sudo arch-chroot "$workdir" pacman-key --populate archlinux || show_error "Failed to populate Arch Linux keyring"
 
-# Install desktop environment packages
-sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon dbus ostree bubblewrap glib2 libarchive flatpak xdg-user-dirs-gtk || show_error "Failed to install desktop environment packages"
-
-# Install grub packages including os-prober
+# Install GRUB packages including os-prober
 sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr os-prober || show_error "Failed to install GRUB, efibootmgr, or os-prober"
 
-# Install GRUB based on firmware type (UEFI or BIOS)
-if [ -d "$workdir/sys/firmware/efi" ]; then
-    # For UEFI systems
-    sudo arch-chroot "$workdir" grub-install --target=x86_64-efi --efi-directory="/boot/efi" --bootloader-id=GRUB || show_error "Failed to install GRUB on NVME drive on UEFI system"
-    sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for UEFI system"
-else
-    # For BIOS systems
-    sudo arch-chroot "$workdir" grub-install --target=i386-pc "$partition_path" || show_error "Failed to install GRUB on BIOS system"
-    sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for BIOS system"
-fi
+# Set up GRUB
+sudo arch-chroot "$workdir" grub-install --target=i386-pc "$partition_path" || show_error "Failed to install GRUB on BIOS system"
 
 # Run os-prober to collect information about other installed operating systems
 sudo arch-chroot "$workdir" os-prober || show_error "Failed to run os-prober"
+
+# Generate GRUB config
+sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for BIOS system"
 
 # Generate the fstab file
 sudo genfstab -U "$workdir" | sudo tee "$workdir/etc/fstab" || show_error "Failed to generate fstab file"
