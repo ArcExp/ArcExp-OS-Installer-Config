@@ -3,6 +3,11 @@
 declare -r workdir='/mnt'
 declare -r osidir='/etc/os-installer'
 
+# Enable debugging and log the output to a file
+LOG_FILE="/tmp/install_script_log.txt"
+exec > >(tee -a "$LOG_FILE") 2>&1
+set -x
+
 # Check if all required environment variables are set
 if [ -z "${OSI_LOCALE+x}" ] || \
    [ -z "${OSI_DEVICE_PATH+x}" ] || \
@@ -52,6 +57,10 @@ if ! sudo arch-chroot "$workdir" dconf update; then
     printf 'Failed to update dconf.\n'
     exit 1
 fi
+
+sudo arch-chroot "$workdir" mkdir "/usr/share/backgrounds/"
+
+sudo cp "$osidir/misc/streetview.png" "$workdir/usr/share/backgrounds/"
 
 # Set hostname
 echo 'ArcExp' | sudo tee "$workdir/etc/hostname"
@@ -165,6 +174,29 @@ if ! sudo arch-chroot "$workdir" pacman -Sy --noconfirm; then
     exit 1
 fi
 
+# Graphics Drivers find and install
+gpu_type=$(lspci)
+
+if grep -E "NVIDIA|GeForce" <<< ${gpu_type}; then
+    # Install NVIDIA drivers
+    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed nvidia-dkms nvidia-utils nvidia-settings cuda; then
+        printf 'Failed to install NVIDIA drivers.\n'
+        exit 1
+    fi
+elif grep -E "Radeon|AMD" <<< ${gpu_type}; then
+    # Install AMD GPU drivers
+    if ! sudo arch-chroot "$workdir" amdgpu-pro-install --no-confirm; then
+        printf 'Failed to install AMD GPU drivers.\n'
+        exit 1
+    fi
+elif ls /sys/class/drm/card* | grep "Intel"; then
+    # Install Intel GPU drivers
+    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed libva-intel-driver libvdpau-va-gl lib32-vulkan-intel vulkan-intel libva-intel-driver libva-utils lib32-mesa; then
+        printf 'Failed to install Intel Graphics drivers.\n'
+        exit 1
+    fi
+fi
+
 # List of packages from Chaotic-AUR to install
 chaotic_packages=(
     yay
@@ -180,11 +212,11 @@ chaotic_packages=(
     gamescope-git
     mangohud-git
     lib32-mangohud-git
-    linux-cachyos
+    linux-cachyos 
     linux-cachyos-headers
 )
 
-# Function to install packages from Chaotic-AUR and handle failures
+# Function to install packages from Chaotic-AUR
 install_chaotic_packages() {
     local package
     for package in "${chaotic_packages[@]}"; do
@@ -194,27 +226,16 @@ install_chaotic_packages() {
     done
 }
 
-# Install packages from Chaotic-AUR and handle failures
+# Install packages from Chaotic-AUR
 install_chaotic_packages
 
-# Function to install Flatpak packages and handle failures
-install_flatpak_packages() {
-    local flatpak_packages=(
-        "flathub com.discordapp.Discord"
-        "flathub com.github.tchx84.Flatseal"
-        "flathub com.usebottles.bottles"
-    )
-    for package in "${flatpak_packages[@]}"; do
-        if ! yes | sudo arch-chroot "$workdir" flatpak install -y "$package"; then
-            printf 'Failed to install package "%s". Skipping.\n' "$package"
-        fi
-    done
-}
+yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.discordapp.Discord
 
-# Install Flatpak packages and handle failures
-install_flatpak_packages
+yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.github.tchx84.Flatseal
 
-sudo arch-chroot "$workdir" pacman -R --noconfirm linux-zen linux-zen-headers
+yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.usebottles.bottles
+
+sudo arch-chroot "$workdir" pacman -Rns --noconfirm linux-zen linux-zen-headers
 
 sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg
 
@@ -256,30 +277,6 @@ elif grep -E "AuthenticAMD" <<< ${proc_type}; then
         exit 1
     fi
     proc_ucode=amd-ucode.img
-fi
-
-# Graphics Drivers find and install
-gpu_type=$(lspci)
-if grep -E "NVIDIA|GeForce" <<< ${gpu_type}; then
-   if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed nvidia-dkms nvidia-utils nvidia-settings cuda bumblebee; then
-        printf 'Failed to install NVIDIA drivers.\n'
-        exit 1
-   fi
-elif lspci | grep 'VGA' | grep -E "Radeon|AMD"; then
-   if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed xf86-video-amdgpu; then
-        printf 'Failed to install AMD GPU drivers.\n'
-        exit 1
-   fi
-elif grep -E "Integrated Graphics Controller" <<< ${gpu_type}; then
-    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed libva-intel-driver libvdpau-va-gl lib32-vulkan-intel vulkan-intel libva-intel-driver libva-utils lib32-mesa; then
-        printf 'Failed to install Intel Integrated Graphics drivers.\n'
-        exit 1
-    fi
-elif grep -E "Intel Corporation UHD" <<< ${gpu_type}; then
-    if ! sudo arch-chroot "$workdir" pacman -S --needed --noconfirm libva-intel-driver libvdpau-va-gl lib32-vulkan-intel vulkan-intel libva-intel-driver libva-utils lib32-mesa; then
-        printf 'Failed to install Intel UHD Graphics drivers.\n'
-        exit 1
-    fi
 fi
 
 # Finally, update system
