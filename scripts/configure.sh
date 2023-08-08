@@ -60,7 +60,8 @@ fi
 
 sudo arch-chroot "$workdir" mkdir "/usr/share/backgrounds/"
 
-sudo cp "$osidir/misc/streetview.png" "$workdir/usr/share/backgrounds/"
+sudo cp "$osidir/misc/wallpapers/ArcExp.png" "$workdir/usr/share/backgrounds/"
+sudo cp "$osidir/misc/wallpapers/ArcExp-Light.png" "$workdir/usr/share/backgrounds/"
 
 # Set hostname
 echo 'ArcExp' | sudo tee "$workdir/etc/hostname"

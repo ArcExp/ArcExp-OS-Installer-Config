@@ -1,7 +1,7 @@
 [org/gnome/desktop/background]
 color-shading-type='solid'
 picture-options='zoom'
-picture-uri-dark='file:///usr/share/backgrounds/streetview.png'
-picture-uri='file:///usr/share/backgrounds/streetview.png'
+picture-uri-dark='file:///usr/share/backgrounds/ArcExp.png'
+picture-uri='file:///usr/share/backgrounds/ArcExp-Light.png'
 primary-color='#46226e'
 secondary-color='#000000'

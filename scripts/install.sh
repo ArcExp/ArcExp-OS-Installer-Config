@@ -40,6 +40,7 @@ if [[ $OSI_USE_ENCRYPTION -eq 1 ]]; then
 		sudo mkfs.fat -F32 ${partition_path}1
 		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup -q luksFormat ${partition_path}2
 		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup open ${partition_path}2
+		sudo mkfs.btrfs -f ${partition_path}2
 
 		sudo mount -o compress=zstd ${partition_path}2 $workdir
 		sudo mount --mkdir ${partition_path}1 $workdir/boot
@@ -78,14 +79,11 @@ fi
 sudo pacstrap "$workdir" base base-devel linux-zen linux-zen-headers linux-firmware dkms
 
 # Install remaining packages
-sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon flatpak wget xdg-user-dirs-gtk bash-completion || show_error "Failed to install desktop environment packages"
+sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon flatpak wget xdg-user-dirs-gtk bash-completion || show_error "Failed to install desktop environment packages"
 
 # Populate the Arch Linux keyring inside chroot
 sudo arch-chroot "$workdir" pacman-key --init || show_error "Failed to initialize Arch Linux keyring"
 sudo arch-chroot "$workdir" pacman-key --populate archlinux || show_error "Failed to populate Arch Linux keyring"
-
-# Add Flathub repository
-sudo arch-chroot "$workdir" flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
 # Install GRUB packages including os-prober
 sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr os-prober || show_error "Failed to install GRUB, efibootmgr, or os-prober"
