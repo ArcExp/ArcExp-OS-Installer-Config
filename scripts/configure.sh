@@ -3,11 +3,6 @@
 declare -r workdir='/mnt'
 declare -r osidir='/etc/os-installer'
 
-# Enable debugging and log the output to a file
-LOG_FILE="/tmp/install_script_log.txt"
-exec > >(tee -a "$LOG_FILE") 2>&1
-set -x
-
 # Check if all required environment variables are set
 if [ -z "${OSI_LOCALE+x}" ] || \
    [ -z "${OSI_DEVICE_PATH+x}" ] || \
@@ -213,8 +208,6 @@ chaotic_packages=(
     gamescope-git
     mangohud-git
     lib32-mangohud-git
-    linux-cachyos 
-    linux-cachyos-headers
 )
 
 # Function to install packages from Chaotic-AUR
@@ -235,8 +228,6 @@ yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.discordapp.Disc
 yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.github.tchx84.Flatseal
 
 yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.usebottles.bottles
-
-sudo arch-chroot "$workdir" pacman -Rns --noconfirm linux-zen linux-zen-headers
 
 sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg
 
