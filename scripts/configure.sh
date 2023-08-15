@@ -181,7 +181,7 @@ if grep -E "NVIDIA|GeForce" <<< ${gpu_type}; then
     fi
 elif grep -E "Radeon|AMD" <<< ${gpu_type}; then
     # Install AMD GPU drivers
-    if ! sudo arch-chroot "$workdir" amdgpu-pro-install --no-confirm; then
+    if ! sudo arch-chroot "$workdir" pacman -S mesa xf86-video-amdgpu --noconfirm; then
         printf 'Failed to install AMD GPU drivers.\n'
         exit 1
     fi
@@ -228,6 +228,8 @@ yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.discordapp.Disc
 yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.github.tchx84.Flatseal
 
 yes | sudo arch-chroot "$workdir" flatpak install -y flathub com.usebottles.bottles
+
+yes | sudo arch-chroot "$workdir" flatpak install -y flathub io.github.Foldex.AdwSteamGtk
 
 sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg
 

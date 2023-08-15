@@ -2,6 +2,7 @@
 
 declare -r workdir='/mnt'
 declare -r osidir='/etc/os-installer'
+declare -r rootlabel='ArcExp'
 
 # Function to display an error and exit
 show_error() {
@@ -39,10 +40,10 @@ if [[ $OSI_USE_ENCRYPTION -eq 1 ]]; then
 		# If target is a drive
 		sudo mkfs.fat -F32 ${partition_path}1
 		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup -q luksFormat ${partition_path}2
-		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup open ${partition_path}2
-		sudo mkfs.btrfs -f ${partition_path}2
+		echo $OSI_ENCRYPTION_PIN | sudo cryptsetup open ${partition_path}2 $rootlabel -
+		sudo mkfs.btrfs -f -L $rootlabel /dev/mapper/$rootlabel
 
-		sudo mount -o compress=zstd ${partition_path}2 $workdir
+		sudo mount -o compress=zstd /dev/mapper/$rootlabel $workdir
 		sudo mount --mkdir ${partition_path}1 $workdir/boot
 		sudo btrfs subvolume create $workdir/home
 
@@ -60,7 +61,7 @@ else
 
 		# If target is a drive
 		sudo mkfs.fat -F32 ${partition_path}1
-		sudo mkfs.btrfs -f ${partition_path}2
+		sudo mkfs.btrfs -f -L $rootlabel ${partition_path}2
 
 		sudo mount -o compress=zstd ${partition_path}2 $workdir
 		sudo mount --mkdir ${partition_path}1 $workdir/boot
@@ -76,7 +77,7 @@ else
 fi
 
 # Install basic system packages
-sudo pacstrap "$workdir" base base-devel linux-zen linux-zen-headers linux-firmware dkms
+sudo pacstrap "$workdir" base sudo linux-zen linux-zen-headers linux-firmware dkms
 
 # Install remaining packages
 sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon flatpak wget xdg-user-dirs-gtk bash-completion || show_error "Failed to install desktop environment packages"
