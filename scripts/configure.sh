@@ -255,24 +255,6 @@ if ! sudo arch-chroot "$workdir" pacman -Sy --noconfirm; then
     exit 1
 fi
 
-# Determine processor type and install microcode
-proc_type=$(lscpu)
-if grep -E "GenuineIntel" <<< ${proc_type}; then
-    echo "Installing Intel microcode"
-    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed intel-ucode; then
-        printf 'Failed to install Intel microcode.\n'
-        exit 1
-    fi
-    proc_ucode=intel-ucode.img
-elif grep -E "AuthenticAMD" <<< ${proc_type}; then
-    echo "Installing AMD microcode"
-    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed amd-ucode; then
-        printf 'Failed to install AMD microcode.\n'
-        exit 1
-    fi
-    proc_ucode=amd-ucode.img
-fi
-
 # Finally, update system
 if ! sudo arch-chroot "$workdir" pacman -Syu; then
     printf 'Failed to update the system.\n'

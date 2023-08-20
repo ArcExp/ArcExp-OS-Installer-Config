@@ -28,7 +28,82 @@ offer_disk_encryption: yes
 skip_user: no
 skip_locale: no
 
-failure_help_url: 'https://duckduckgo.com/?q="os-installer {}"+"failed installation"'
+# List of software that can additionally be selected for installation.
+# Each packages requires all fields to be set.
+#
+# package         string  Forwarded to the installation script as is.
+# suggested       bool    Optional. Whether installation defaults to yes.
+# name_LC         string  Name presented to user. Translatable.
+#                         If no (English) name is available, it will only
+#                         be shown for translated languages.
+# description_LC  string  Optional. Description presented to user. Translatable.
+# icon_path       string  Optional. Absolute path to icon to be displayed.
+#
+# Default: [], suggested: False, description: '', icon_path: fallback icon
+additional_software:
+    - package        : 'firefox'
+      suggested      : yes
+      name           : 'Firefox'
+      name_de        : 'Firefox'
+      description    : 'Popular Web Browser from Mozilla'
+      description_de : 'Beliebter Internet-Browser von Mozilla'
+      icon_path      : '/etc/os-installer/icons/firefox.png'
+    - package        : 'nautilus'
+      suggested      : yes
+      name           : 'Files'
+      name_de        : 'Dateien'
+      description    : 'Access and organize files'
+      description_de : 'Auf Dateien zugreifen und diese organisieren'
+      icon_path      : '/etc/os-installer/icons/nautilus.svg'
+    - name           : 'Optional Option'
+      description    : 'Select your favorite option'
+      icon_path      : '/etc/os-installer/icons/options-symbolic.svg'
+      options        :
+        - option     : 'package_1'
+          name       : 'Option 1' 
+          name_es    : 'Opción 1'
+        - option     : 'package_2'
+          name       : 'Option 2' 
+          name_es    : 'Opción 2'
+        - option     : 'package_3'
+          name       : 'Option 3' 
+          name_es    : 'Opción 3'
+    - package        : 'japanese-input-program'
+      suggested      : yes
+      name_jp        : '入力プログラム'
+      icon_path      : '/etc/os-installer/icons/jp-symbol.svg'
+
+# List of features that can additionally be selected. Very similar
+# to `additional_software`, but meant for more generic features. Can
+# be used instead of or in combination with `additional_software`.
+#
+# feature         string  Forwarded to the installation script as is.
+# suggested       bool    Optional. Whether installation defaults to yes.
+# name_LC         string  Name presented to user. Translatable.
+#                         If no (English) name is available, it will only
+#                         be shown for translated languages.
+# description_LC  string  Optional. Description presented to user. Translatable.
+# icon_path       string  Optional. Absolute path to icon to be displayed.
+#
+# Default: [], suggested: False, description: '', icon_path: no icon
+additional_features:
+    - feature        : 'snapshots'
+      suggested      : yes
+      name           : 'Snapshots'
+      name_et        : 'Vahepildid'
+      description    : 'Snapshots allow restoring a previous state of your system'
+      description_et : 'Vahepildid võimaldavad taastada teie süsteemi eelmise seisundi'
+      icon_path      : '/etc/os-installer/icons/snapshot.svg'
+    - feature        : 'dummy'
+      name           : 'Dummy'
+      description    : 'This does not do anything'
+
+# Upon failure an option to search for help on the internet is given.
+# The url this leads to can be defined here. The squiggly brackets are
+# replaced with the os-installer version.
+#
+# Default: 'https://duckduckgo.com/?q="os-installer {}"+"failed installation"'
+failure_help_url: 'https://support.dist.ro/new_issue?q="failed"+"os-installer {}"'
 
 browser_cmd: 'firefox'
 disks_cmd  : 'gnome-disks'

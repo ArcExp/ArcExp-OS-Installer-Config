@@ -87,7 +87,7 @@ sudo arch-chroot "$workdir" pacman-key --init || show_error "Failed to initializ
 sudo arch-chroot "$workdir" pacman-key --populate archlinux || show_error "Failed to populate Arch Linux keyring"
 
 # Install GRUB packages including os-prober
-sudo arch-chroot "$workdir" pacman -S --noconfirm grub efibootmgr os-prober || show_error "Failed to install GRUB, efibootmgr, or os-prober"
+sudo arch-chroot "$workdir" pacman -S --noconfirm grub os-prober || show_error "Failed to install GRUB or os-prober"
 
 # Set up GRUB
 sudo arch-chroot "$workdir" grub-install --target=i386-pc "$partition_path" || show_error "Failed to install GRUB on BIOS system"
@@ -97,6 +97,48 @@ sudo arch-chroot "$workdir" os-prober || show_error "Failed to run os-prober"
 
 # Generate GRUB config
 sudo arch-chroot "$workdir" grub-mkconfig -o /boot/grub/grub.cfg || show_error "Failed to generate GRUB configuration file for BIOS system"
+
+# Determine processor type and install microcode
+proc_type=$(lscpu)
+if grep -E "GenuineIntel" <<< ${proc_type}; then
+    echo "Installing Intel microcode"
+    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed intel-ucode; then
+        printf 'Failed to install Intel microcode.\n'
+        exit 1
+    fi
+    proc_ucode=intel-ucode.img
+elif grep -E "AuthenticAMD" <<< ${proc_type}; then
+    echo "Installing AMD microcode"
+    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed amd-ucode; then
+        printf 'Failed to install AMD microcode.\n'
+        exit 1
+    fi
+    proc_ucode=amd-ucode.img
+fi
+
+# Configure mkinitcpio
+MKINITCPIO_CONF="${workdir}/etc/mkinitcpio.conf"
+echo "MODULES=(zen)" | sudo tee -a "${MKINITCPIO_CONF}"
+echo "BINARIES=()" | sudo tee -a "${MKINITCPIO_CONF}"
+echo "FILES=()" | sudo tee -a "${MKINITCPIO_CONF}"
+
+if [[ $OSI_USE_ENCRYPTION -eq 1 ]]; then
+echo "HOOKS=(base udev autodetect modconf block encrypt filesystems keyboard fsck)" | sudo tee -a "${MKINITCPIO_CONF}"
+else
+echo "HOOKS=(base udev autodetect modconf block filesystems keyboard fsck)" | sudo tee -a "${MKINITCPIO_CONF}"
+fi
+
+# Determine CPU microcode
+CPU_MICROCODE="$(grep -m1 -oP '(?<=vendor_id\\s: ).*' ${workdir}/proc/cpuinfo)"
+
+# Add microcode hook for the specific CPU
+case "${CPU_MICROCODE}" in
+  "GenuineIntel"*) echo "HOOKS+=(intel_ucode)" | sudo tee -a "${MKINITCPIO_CONF}" ;;
+  "AuthenticAMD"*) echo "HOOKS+=(amd_ucode)" | sudo tee -a "${MKINITCPIO_CONF}" ;;
+esac
+
+# Generate initramfs with mkinitcpio
+sudo arch-chroot "$workdir" mkinitcpio -p linux-zen
 
 # Generate the fstab file
 sudo genfstab -U "$workdir" | sudo tee "$workdir/etc/fstab" || show_error "Failed to generate fstab file"
