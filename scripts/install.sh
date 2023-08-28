@@ -80,11 +80,30 @@ fi
 sudo pacstrap "$workdir" base sudo linux-zen linux-zen-headers linux-firmware dkms
 
 # Install remaining packages
-sudo arch-chroot "$workdir" pacman -S --noconfirm firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon flatpak wget xdg-user-dirs-gtk bash-completion || show_error "Failed to install desktop environment packages"
+sudo arch-chroot "$workdir" pacman -S --noconfirm eog firefox fsarchiver gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon flatpak wget xdg-user-dirs-gtk bash-completion || show_error "Failed to install desktop environment packages"
 
 # Populate the Arch Linux keyring inside chroot
 sudo arch-chroot "$workdir" pacman-key --init || show_error "Failed to initialize Arch Linux keyring"
 sudo arch-chroot "$workdir" pacman-key --populate archlinux || show_error "Failed to populate Arch Linux keyring"
+
+sudo cp "$osidir/misc/pacman-config/pacman.conf" "$workdir/etc/"
+sudo cp "$osidir/misc/pacman-config/pacman-new.conf" "$workdir/etc/"
+
+# Use a YAML parser like 'yq' to extract package information
+if [ -n "${OSI_ADDITIONAL_SOFTWARE+x}" ]; then
+    IFS=$'\n'
+    for software in $(echo "$OSI_ADDITIONAL_SOFTWARE" | yq -r '.additional_software[]'); do
+        package=$(echo "$software" | yq -r '.package')
+        selected=$(echo "$software" | yq -r '.selected')
+
+        if [ "$selected" == "yes" ]; then
+            sudo arch-chroot "$workdir" pacman -S --noconfirm "$package" || show_error "Failed to install $package"
+        fi
+    done
+fi
+
+sudo rm "$workdir/etc/pacman.conf"
+sudo mv "$workdir/etc/pacman-new.conf" "$workdir/etc/pacman.conf"
 
 # Install GRUB packages including os-prober
 sudo arch-chroot "$workdir" pacman -S --noconfirm grub os-prober || show_error "Failed to install GRUB or os-prober"
@@ -118,7 +137,7 @@ fi
 
 # Configure mkinitcpio
 MKINITCPIO_CONF="${workdir}/etc/mkinitcpio.conf"
-echo "MODULES=(zen)" | sudo tee -a "${MKINITCPIO_CONF}"
+echo "MODULES=()" | sudo tee -a "${MKINITCPIO_CONF}"
 echo "BINARIES=()" | sudo tee -a "${MKINITCPIO_CONF}"
 echo "FILES=()" | sudo tee -a "${MKINITCPIO_CONF}"
 
@@ -127,6 +146,8 @@ echo "HOOKS=(base udev autodetect modconf block encrypt filesystems keyboard fsc
 else
 echo "HOOKS=(base udev autodetect modconf block filesystems keyboard fsck)" | sudo tee -a "${MKINITCPIO_CONF}"
 fi
+
+echo "COMPRESSION="xz"" | sudo tee -a "${MKINITCPIO_CONF}"
 
 # Determine CPU microcode
 CPU_MICROCODE="$(grep -m1 -oP '(?<=vendor_id\\s: ).*' ${workdir}/proc/cpuinfo)"

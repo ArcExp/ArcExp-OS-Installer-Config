@@ -3,24 +3,6 @@
 declare -r workdir='/mnt'
 declare -r osidir='/etc/os-installer'
 
-# Check if all required environment variables are set
-if [ -z "${OSI_LOCALE+x}" ] || \
-   [ -z "${OSI_DEVICE_PATH+x}" ] || \
-   [ -z "${OSI_DEVICE_IS_PARTITION+x}" ] || \
-   [ -z "${OSI_DEVICE_EFI_PARTITION+x}" ] || \
-   [ -z "${OSI_USE_ENCRYPTION+x}" ] || \
-   [ -z "${OSI_ENCRYPTION_PIN+x}" ] || \
-   [ -z "${OSI_USER_NAME+x}" ] || \
-   [ -z "${OSI_USER_AUTOLOGIN+x}" ] || \
-   [ -z "${OSI_USER_PASSWORD+x}" ] || \
-   [ -z "${OSI_FORMATS+x}" ] || \
-   [ -z "${OSI_TIMEZONE+x}" ] || \
-   [ -z "${OSI_ADDITIONAL_SOFTWARE+x}" ]
-then
-    printf 'configure.sh called without all environment variables set!\n'
-    exit 1
-fi
-
 # Enable systemd services
 if ! sudo arch-chroot "$workdir" systemctl enable gdm.service NetworkManager.service bluetooth.service fstrim.timer; then
     printf 'Failed to enable systemd services.\n'
