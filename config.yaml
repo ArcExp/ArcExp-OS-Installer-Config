@@ -41,27 +41,22 @@ skip_locale: no
 #
 # Default: [], suggested: False, description: '', icon_path: fallback icon
 additional_software:
-     - name           : 'Firefox'
-       name_de        : 'Firefox'
-       description    : 'Popular Web Browser from Mozilla'
-       description_de : 'Beliebter Internet-Browser von Mozilla'
-       icon_path      : '/etc/os-installer/icons/firefox.png'
-       keyword        : 'firefox'
+     - name           : 'Chromium'
+       name_de        : 'Chrom'
+       description    : 'Popular Open Source Alternative to Google Chrome'
+       description_de : Beliebte Open-Source-Alternative zu Google Chrome".
+       icon_path      : '/etc/os-installer/icons/chromium.png'
+       keyword        : 'ungoogled-chromium-bin'
        suggested      : yes
-     - name           : 'LibreWolf'
-       name_de        : 'LibreWolf'
-       description    : 'Popular Web Browser from the LibreWolf Community'
-       description_de : 'Beliebter Internet-Browser von the LibreWolf Community'
-       icon_path      : '/etc/os-installer/icons/librewolf.png'
-       keyword        : 'LibreWolf'
-       suggested      : yes
+       
      - name           : 'Brave'
        name_de        : 'Brave'
        description    : 'Popular Web Browser from Brave Software'
        description_de : 'Beliebter Internet-Browser von Brave Software'
        icon_path      : '/etc/os-installer/icons/brave.png'
-       keyword        : 'brave'
+       keyword        : 'brave-bin'
        suggested      : yes
+       
      - name           : 'AUR helpers'
        description    : 'Select your desired AUR helper. Skip if unsure what to pick'
        icon_path      : '/etc/os-installer/icons/options-symbolic.svg'
@@ -72,6 +67,8 @@ additional_software:
            name       : 'paru'
          - option     : 'pikaur'
            name       : 'pikaur'
+         - option     : 'none of the above'
+           name       : 'none'
 
 # Upon failure an option to search for help on the internet is given.
 # The url this leads to can be defined here. The squiggly brackets are

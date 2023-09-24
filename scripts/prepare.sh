@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 
 # prep Pacman for buisness
 sudo pacman-key --init
