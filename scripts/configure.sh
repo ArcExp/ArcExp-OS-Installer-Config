@@ -18,6 +18,12 @@ echo "LANG=\"$OSI_LOCALE\"" | sudo tee "$workdir/etc/locale.conf"
 # Generate locales
 sudo arch-chroot "$workdir" locale-gen
 
+# Set timezone
+sudo arch-chroot "$workdir" ln -sf "/usr/share/zoneinfo/$OSI_TIMEZONE" /etc/localtime
+
+# Apply keymap
+sudo arch-chroot "$workdir" gsettings set org.gnome.desktop.input-sources sources "[('xkb', '$OSI_KEYBOARD_LAYOUT')]"
+
 # Add dconf tweaks for GNOME desktop configuration
 sudo cp -rv "$osidir/misc/dconf" "$workdir/etc/"
 
@@ -39,7 +45,7 @@ generate_hashed_password() {
 }
 
 # Add user, setup groups, and set user properties
-if ! sudo arch-chroot "$workdir" useradd -m -s /bin/bash "$OSI_USER_NAME"; then
+if ! sudo arch-chroot "$workdir" useradd -m -s /usr/bin/bash "$OSI_USER_NAME"; then
     printf 'Failed to add user.\n'
     exit 1
 fi
@@ -66,19 +72,10 @@ fi
 # Add the user to the sudoers file
 echo "$OSI_USER_NAME ALL=(ALL) ALL" | sudo arch-chroot "$workdir" tee -a /etc/sudoers
 
-# Set timezone
-sudo arch-chroot "$workdir" ln -sf "/usr/share/zoneinfo/$OSI_TIMEZONE" /etc/localtime
-
-# Set Keymap
-declare -r current_keymap=$(gsettings get org.gnome.desktop.input-sources sources)
-printf "[org.gnome.desktop.input-sources]\nsources = $current_keymap\n" | sudo tee "$workdir/etc/dconf/db/local.d/keymap"
-
 # Set auto-login if requested
 if [[ "$OSI_USER_AUTOLOGIN" -eq 1 ]]; then
     printf "[daemon]\nAutomaticLoginEnable=True\nAutomaticLogin=$OSI_USER_NAME\n" | sudo tee "$workdir/etc/gdm/custom.conf"
 fi
-
-sudo arch-chroot "$workdir" mkinitcpio -P
 
 # Create home directory and subdirectories
 sudo arch-chroot "$workdir" mkdir -p "/home/$OSI_USER_NAME/Desktop" \
@@ -95,6 +92,8 @@ sudo arch-chroot "$workdir" touch "/home/$OSI_USER_NAME/Templates/Text File"
 
 # Set ownership of the home directory
 sudo arch-chroot "$workdir" chown -R "$OSI_USER_NAME:$OSI_USER_NAME" "/home/$OSI_USER_NAME"
+
+sudo arch-chroot "$workdir" mkinitcpio -P
 
 # Add multilib repository
 printf "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n" | sudo tee -a "$workdir/etc/pacman.conf"

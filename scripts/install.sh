@@ -116,10 +116,10 @@ else
 fi
 
 # Install basic system packages
-sudo pacstrap "$workdir" base base-devel linux linux-headers linux-firmware
+sudo pacstrap "$workdir" base sudo linux linux-headers linux-firmware
 
 # Install remaining packages
-sudo arch-chroot "$workdir" pacman -S --noconfirm eog fsarchiver firefox gdm gedit git gnome-backgrounds gnome-calculator gnome-console gnome-control-center gnome-disk-utility gnome-font-viewer gnome-photos gnome-screenshot gnome-settings-daemon gnome-shell gnome-software gnome-text-editor gnome-tweaks gnome-bluetooth gnome-bluetooth-3.0 gnu-netcat gpart gpm gptfdisk nautilus neofetch networkmanager network-manager-applet power-profiles-daemon flatpak wget xdg-user-dirs-gtk zsh grml-zsh-config || show_error "Failed to install desktop environment packages"
+sudo arch-chroot "$workdir" pacman -S --noconfirm eog fsarchiver firefox git gnome neofetch networkmanager network-manager-applet power-profiles-daemon flatpak xdg-user-dirs-gtk || show_error "Failed to install desktop environment packages"
 
 # Function to check if a package is installed
 is_package_installed() {
