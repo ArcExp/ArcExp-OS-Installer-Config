@@ -175,6 +175,29 @@ elif grep -E "AuthenticAMD" <<< ${proc_type}; then
     proc_ucode=amd-ucode.img
 fi
 
+# Graphics Drivers find and install
+gpu_type=$(lspci)
+
+if grep -E "NVIDIA|GeForce" <<< ${gpu_type}; then
+    # Install NVIDIA drivers
+    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed dkms nvidia-dkms nvidia-utils nvidia-settings cuda; then
+        printf 'Failed to install NVIDIA drivers.\n'
+        exit 1
+    fi
+elif grep -E "Radeon|AMD" <<< ${gpu_type}; then
+    # Install AMD GPU drivers
+    if ! sudo arch-chroot "$workdir" pacman -S mesa xf86-video-amdgpu --noconfirm; then
+        printf 'Failed to install AMD GPU drivers.\n'
+        exit 1
+    fi
+elif ls /sys/class/drm/card* | grep "Intel"; then
+    # Install Intel GPU drivers
+    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed libva-intel-driver libvdpau-va-gl lib32-vulkan-intel vulkan-intel libva-intel-driver libva-utils lib32-mesa; then
+        printf 'Failed to install Intel Graphics drivers.\n'
+        exit 1
+    fi
+fi
+
 # Generate the fstab file
 sudo genfstab -U "$workdir" | sudo tee "$workdir/etc/fstab" || show_error "Failed to generate fstab file"
 

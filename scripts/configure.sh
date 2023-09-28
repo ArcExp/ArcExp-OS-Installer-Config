@@ -21,9 +21,6 @@ sudo arch-chroot "$workdir" locale-gen
 # Set timezone
 sudo arch-chroot "$workdir" ln -sf "/usr/share/zoneinfo/$OSI_TIMEZONE" /etc/localtime
 
-# Apply keymap
-sudo arch-chroot "$workdir" gsettings set org.gnome.desktop.input-sources sources "[('xkb', '$OSI_KEYBOARD_LAYOUT')]"
-
 # Add dconf tweaks for GNOME desktop configuration
 sudo cp -rv "$osidir/misc/dconf" "$workdir/etc/"
 
@@ -44,7 +41,11 @@ generate_hashed_password() {
     echo "$password" | mkpasswd --method=sha-512 --salt="$salt" --stdin
 }
 
-# Add user, setup groups, and set user properties
+# Set root password in the chroot environment
+root_password=$(generate_hashed_password "$ROOT_PASSWORD")
+echo "root:$root_password" | sudo arch-chroot "$workdir" chpasswd --encrypted
+
+# Add non root user, setup groups, and set user properties
 if ! sudo arch-chroot "$workdir" useradd -m -s /usr/bin/bash "$OSI_USER_NAME"; then
     printf 'Failed to add user.\n'
     exit 1
@@ -93,32 +94,22 @@ sudo arch-chroot "$workdir" touch "/home/$OSI_USER_NAME/Templates/Text File"
 # Set ownership of the home directory
 sudo arch-chroot "$workdir" chown -R "$OSI_USER_NAME:$OSI_USER_NAME" "/home/$OSI_USER_NAME"
 
-sudo arch-chroot "$workdir" mkinitcpio -P
+# Apply keymap
+sudo arch-chroot "$workdir" su - "$OSI_USER_NAME" -c 'true'
+
+sudo arch-chroot "$workdir" gsettings set org.gnome.desktop.input-sources sources $OSI_KEYBOARD_LAYOUT
+
+# sudo arch-chroot "$workdir" setxkbmap $OSI_KEYBOARD_LAYOUT
+
+# sudo arch-chroot "$workdir" gsettings set org.gnome.desktop.input-sources sources "[('xkb', '$OSI_KEYBOARD_LAYOUT')]"
+
+sudo arch-chroot "$workdir" su - -c 'true'
 
 # Add multilib repository
 printf "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n" | sudo tee -a "$workdir/etc/pacman.conf"
 
-# Graphics Drivers find and install
-gpu_type=$(lspci)
+sudo arch-chroot "$workdir" mkinitcpio -P
 
-if grep -E "NVIDIA|GeForce" <<< ${gpu_type}; then
-    # Install NVIDIA drivers
-    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed dkms nvidia-dkms nvidia-utils nvidia-settings cuda; then
-        printf 'Failed to install NVIDIA drivers.\n'
-        exit 1
-    fi
-elif grep -E "Radeon|AMD" <<< ${gpu_type}; then
-    # Install AMD GPU drivers
-    if ! sudo arch-chroot "$workdir" pacman -S mesa xf86-video-amdgpu --noconfirm; then
-        printf 'Failed to install AMD GPU drivers.\n'
-        exit 1
-    fi
-elif ls /sys/class/drm/card* | grep "Intel"; then
-    # Install Intel GPU drivers
-    if ! sudo arch-chroot "$workdir" pacman -S --noconfirm --needed libva-intel-driver libvdpau-va-gl lib32-vulkan-intel vulkan-intel libva-intel-driver libva-utils lib32-mesa; then
-        printf 'Failed to install Intel Graphics drivers.\n'
-        exit 1
-    fi
-fi
+sudo arch-chroot "$workdir" exit
 
 exit 0
