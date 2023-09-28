@@ -24,7 +24,7 @@ sudo arch-chroot "$workdir" ln -sf "/usr/share/zoneinfo/$OSI_TIMEZONE" /etc/loca
 # Add dconf tweaks for GNOME desktop configuration
 sudo cp -rv "$osidir/misc/dconf" "$workdir/etc/"
 
-sudo arch-chroot "$workdir" dconf update
+sudo arch-chroot "$workdir" dbus-launch dconf update
 
 sudo arch-chroot "$workdir" mkdir "/usr/share/backgrounds/"
 
@@ -75,7 +75,7 @@ echo "$OSI_USER_NAME ALL=(ALL) ALL" | sudo arch-chroot "$workdir" tee -a /etc/su
 
 # Set auto-login if requested
 if [[ "$OSI_USER_AUTOLOGIN" -eq 1 ]]; then
-    printf "[daemon]\nAutomaticLoginEnable=True\nAutomaticLogin=$OSI_USER_NAME\n" | sudo tee "$workdir/etc/gdm/custom.conf"
+    printf "[daemon]\nAutomaticLoginEnable=True\nAutomaticLogin=$OSI_USER_NAME\n" | sudo arch-chroot "$workdir" dbus-launch tee "$workdir/etc/gdm/custom.conf"
 fi
 
 # Create home directory and subdirectories
@@ -95,9 +95,7 @@ sudo arch-chroot "$workdir" touch "/home/$OSI_USER_NAME/Templates/Text File"
 sudo arch-chroot "$workdir" chown -R "$OSI_USER_NAME:$OSI_USER_NAME" "/home/$OSI_USER_NAME"
 
 # Apply keymap
-sudo arch-chroot "$workdir" su - "$OSI_USER_NAME" -c 'true'
-
-sudo arch-chroot "$workdir" gsettings set org.gnome.desktop.input-sources sources $OSI_KEYBOARD_LAYOUT
+sudo arch-chroot "$workdir" dbus-launch su - "$OSI_USER_NAME" -c gsettings set org.gnome.desktop.input-sources sources "[('xkb','$OSI_KEYBOARD_LAYOUT')]"
 
 # sudo arch-chroot "$workdir" setxkbmap $OSI_KEYBOARD_LAYOUT
 
