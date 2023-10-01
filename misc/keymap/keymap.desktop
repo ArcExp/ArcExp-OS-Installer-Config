@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Keymap.sh script executor
+Exec=keymap.sh
+Terminal=false
+

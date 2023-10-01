@@ -7,10 +7,10 @@ declare -r osidir='/etc/os-installer'
 sudo arch-chroot "$workdir" systemctl enable gdm.service NetworkManager.service bluetooth.service fstrim.timer
 
 # Set chosen locale and en_US.UTF-8 for it is required by some programs
-echo "$OSI_LOCALE UTF-8" | sudo tee -a "$workdir/etc/locale.gen"
+echo "$OSI_LOCALE UTF-8" | sudo tee "$workdir/etc/locale.gen"
 
 if [[ "$OSI_LOCALE" != 'en_US.UTF-8' ]]; then
-    echo "en_US.UTF-8 UTF-8" | sudo tee -a "$workdir/etc/locale.gen"
+    echo "en_US.UTF-8 UTF-8" | sudo tee "$workdir/etc/locale.gen"
 fi
 
 echo "LANG=\"$OSI_LOCALE\"" | sudo tee "$workdir/etc/locale.conf"
@@ -24,7 +24,7 @@ sudo arch-chroot "$workdir" ln -sf "/usr/share/zoneinfo/$OSI_TIMEZONE" /etc/loca
 # Add dconf tweaks for GNOME desktop configuration
 sudo cp -rv "$osidir/misc/dconf" "$workdir/etc/"
 
-sudo arch-chroot "$workdir" dbus-launch dconf update
+sudo arch-chroot "$workdir" dconf update
 
 sudo arch-chroot "$workdir" mkdir "/usr/share/backgrounds/"
 
@@ -75,7 +75,7 @@ echo "$OSI_USER_NAME ALL=(ALL) ALL" | sudo arch-chroot "$workdir" tee -a /etc/su
 
 # Set auto-login if requested
 if [[ "$OSI_USER_AUTOLOGIN" -eq 1 ]]; then
-    printf "[daemon]\nAutomaticLoginEnable=True\nAutomaticLogin=$OSI_USER_NAME\n" | sudo arch-chroot "$workdir" dbus-launch tee "$workdir/etc/gdm/custom.conf"
+    printf "[daemon]\nAutomaticLoginEnable=True\nAutomaticLogin=$OSI_USER_NAME\n" | sudo tee "$workdir/etc/gdm/custom.conf"
 fi
 
 # Create home directory and subdirectories
@@ -94,17 +94,18 @@ sudo arch-chroot "$workdir" touch "/home/$OSI_USER_NAME/Templates/Text File"
 # Set ownership of the home directory
 sudo arch-chroot "$workdir" chown -R "$OSI_USER_NAME:$OSI_USER_NAME" "/home/$OSI_USER_NAME"
 
+# Set custom keymap, very hacky but it gets the job done
+# TODO: Also set in TTY
+declare -r current_keymap=$(gsettings get org.gnome.desktop.input-sources sources $OSI_KEYBOARD_LAYOUT)
+printf "[org.gnome.desktop.input-sources]\nsources = $current_keymap\n" | sudo tee $workdir/etc/dconf/db/local.d/keymap
+
 # Apply keymap
-sudo arch-chroot "$workdir" dbus-launch su - "$OSI_USER_NAME" -c gsettings set org.gnome.desktop.input-sources sources "[('xkb','$OSI_KEYBOARD_LAYOUT')]"
+# sudo arch-chroot "$workdir" su - "$OSI_USER_NAME" -c 'gsettings set org.gnome.desktop.input-sources sources "[('xkb','$OSI_KEYBOARD_LAYOUT')]"'
 
-# sudo arch-chroot "$workdir" setxkbmap $OSI_KEYBOARD_LAYOUT
-
-# sudo arch-chroot "$workdir" gsettings set org.gnome.desktop.input-sources sources "[('xkb', '$OSI_KEYBOARD_LAYOUT')]"
-
-sudo arch-chroot "$workdir" su - -c 'true'
+# sudo arch-chroot "$workdir" exit
 
 # Add multilib repository
-printf "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n" | sudo tee -a "$workdir/etc/pacman.conf"
+printf "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n" | sudo tee "$workdir/etc/pacman.conf"
 
 sudo arch-chroot "$workdir" mkinitcpio -P
 
